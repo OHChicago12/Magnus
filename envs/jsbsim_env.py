@@ -48,6 +48,7 @@ class JSBSimEnv(gym.Env):
         airspeed_randomization_kts=15,
         attitude_randomization_deg=5,
         wind_randomization_fps=15,
+        departed_start_prob=0.0,
     ):
         super().__init__()
 
@@ -63,6 +64,7 @@ class JSBSimEnv(gym.Env):
         self.airspeed_randomization_kts = airspeed_randomization_kts
         self.attitude_randomization_deg = attitude_randomization_deg
         self.wind_randomization_fps = wind_randomization_fps
+        self.departed_start_prob = departed_start_prob
 
         root_dir = root_dir or jsbsim.get_default_root_dir()
         self.fdm = jsbsim.FGFDMExec(jsbsim.get_default_root_dir())
@@ -86,9 +88,7 @@ class JSBSimEnv(gym.Env):
         self._steps = 0
         self._max_steps = 2000  # ~100s of sim time at agent_hz=20
 
-    def _set_initial_conditions(self):
-        # Sample randomized initial conditions. self.np_random is seeded by
-        # gymnasium via super().reset(seed=seed), called before this method.
+    def _set_initial_conditions(self, departed=False):
         altitude_ft = self.initial_altitude_ft + self.np_random.uniform(
             -self.altitude_randomization_ft, self.altitude_randomization_ft
         )
@@ -102,17 +102,33 @@ class JSBSimEnv(gym.Env):
             -self.attitude_randomization_deg, self.attitude_randomization_deg
         )
 
+        alpha_deg = None
+        gamma_deg = 0
+        p_rad = 0.0
+        r_rad = 0.0
+        if departed:
+            airspeed_kts = self.np_random.uniform(40, 60)
+            alpha_deg = self.np_random.uniform(16, 25)
+            gamma_deg = self.np_random.uniform(-10, 0)
+            phi_deg = self.np_random.choice([-1, 1]) * self.np_random.uniform(0, 30)
+            p_rad = self.np_random.uniform(-1.0, 1.0)
+            r_rad = self.np_random.choice([-1, 1]) * self.np_random.uniform(0.6, 1.2)
+
         self.fdm["ic/h-sl-ft"] = altitude_ft
         self.fdm["ic/vc-kts"] = airspeed_kts
-        self.fdm["ic/gamma-deg"] = 0      # flight path angle
-        self.fdm["ic/phi-deg"] = phi_deg  # roll, randomized
-        self.fdm["ic/theta-deg"] = theta_deg  # pitch, randomized
-        self.fdm["ic/psi-true-deg"] = 0   # heading
+        self.fdm["ic/gamma-deg"] = gamma_deg
+        self.fdm["ic/phi-deg"] = phi_deg
+        if alpha_deg is not None:
+            self.fdm["ic/alpha-deg"] = alpha_deg
+        else:
+            self.fdm["ic/theta-deg"] = theta_deg
+        self.fdm["ic/psi-true-deg"] = 0
+        self.fdm["ic/p-rad_sec"] = p_rad
+        self.fdm["ic/r-rad_sec"] = r_rad
         self.fdm.run_ic()
         self.fdm.get_propulsion().init_running(-1)
         self.fdm["fcs/mixture-cmd-norm[0]"] = 1.0
 
-        # Randomized wind, set AFTER run_ic() so it doesn't perturb trim.
         wind_north_fps = self.np_random.uniform(
             -self.wind_randomization_fps, self.wind_randomization_fps
         )
@@ -125,9 +141,14 @@ class JSBSimEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.fdm.set_dt(self.dt)
-        self._set_initial_conditions()
+
+        departed = bool((options or {}).get("departed", False))
+        if not departed and self.departed_start_prob > 0:
+            departed = bool(self.np_random.random() < self.departed_start_prob)
+
+        self._set_initial_conditions(departed=departed)
         self._steps = 0
-        self._was_departed = False
+        self._was_departed = departed  # departed spawns count as departed from step 0
         self._recovery_streak = 0
         return self._get_obs(), {}
 
