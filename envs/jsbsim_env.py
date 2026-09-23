@@ -127,6 +127,8 @@ class JSBSimEnv(gym.Env):
         self.fdm.set_dt(self.dt)
         self._set_initial_conditions()
         self._steps = 0
+        self._was_departed = False
+        self._recovery_streak = 0
         return self._get_obs(), {}
 
     def _get_obs(self):
@@ -166,33 +168,91 @@ class JSBSimEnv(gym.Env):
         self._steps += 1
         obs = self._get_obs()
 
-        terminated = self._check_termination(obs)
+        terminated, termination_reason = self._check_termination(obs)
         truncated = self._steps >= self._max_steps
-        reward = self._compute_reward(obs)
+        reward = self._compute_reward(obs, termination_reason)
 
-        info = {"sim_time_s": self.fdm.get_sim_time()}
+        info = {
+            "sim_time_s": self.fdm.get_sim_time(),
+            "termination_reason": termination_reason,
+        }
         return obs, reward, terminated, truncated, info
 
     def _check_termination(self, obs):
         phi, theta = obs[0], obs[1]
+        alpha = obs[6]
         altitude = self.fdm["position/h-sl-ft"]
-        # Placeholder safety bounds -- these are NOT your real envelope limits,
-        # just enough to stop a runaway sim during Phase 0 testing.
-        if altitude < 100:
-            return True
-        if abs(phi) > np.deg2rad(160) or abs(theta) > np.deg2rad(80):
-            return True
-        return False
 
-    def _compute_reward(self, obs):
+        # Placeholder thresholds -- NOT validated against a real flight
+        # envelope yet. Expect to revisit these once real airframe data
+        # is available.
+        DEPARTURE_ALPHA_DEG = 15.0
+        DEPARTURE_BANK_DEG = 60.0
+        RECOVERY_ALPHA_DEG = 8.0
+        RECOVERY_BANK_DEG = 20.0
+        CRASH_ALTITUDE_FT = 50
+        UNRECOVERABLE_BANK_DEG = 150
+        UNRECOVERABLE_PITCH_DEG = 85
+
+        # Track whether the aircraft has departed controlled flight at any
+        # point this episode. Sticky for the rest of the episode -- once
+        # departed, always departed, so "recovered" below only fires after
+        # a genuine departure, not trivially at t=0.
+        if abs(alpha) > DEPARTURE_ALPHA_DEG or abs(phi) > np.deg2rad(DEPARTURE_BANK_DEG):
+            self._was_departed = True
+
+        # Failure: hit the ground.
+        if altitude < CRASH_ALTITUDE_FT:
+            return True, "crashed"
+
+        # Failure: attitude so extreme, recovery is not realistic.
+        if abs(phi) > np.deg2rad(UNRECOVERABLE_BANK_DEG) or abs(theta) > np.deg2rad(UNRECOVERABLE_PITCH_DEG):
+            return True, "unrecoverable_attitude"
+
+        # Success: controlled flight regained after a genuine departure,
+        # sustained for RECOVERY_STREAK_STEPS consecutive steps -- a single
+        # instant inside the safe zone (e.g. randomly passing through it
+        # while still tumbling) does not count as recovery.
+        RECOVERY_STREAK_STEPS = 20  # ~1s at agent_hz=20
+
+        in_recovery_zone = (
+            abs(alpha) < RECOVERY_ALPHA_DEG and abs(phi) < np.deg2rad(RECOVERY_BANK_DEG)
+        )
+
+        if self._was_departed and in_recovery_zone:
+            self._recovery_streak += 1
+        else:
+            self._recovery_streak = 0
+
+        if self._was_departed and self._recovery_streak >= RECOVERY_STREAK_STEPS:
+            return True, "recovered"
+
+        return False, None
+
+    def _compute_reward(self, obs, termination_reason):
         alpha = obs[6]   # AoA, degrees
         phi = obs[0]     # roll, radians
 
-        safe_alpha_deg = 8.0    # rough safe AoA target for c172p, well below stall
+        # Placeholder magnitudes -- not validated, just enough to give PPO
+        # a directionally sensible signal. Expect to retune these once
+        # real training results are in.
+        safe_alpha_deg = 8.0
         alpha_penalty = -abs(alpha - safe_alpha_deg) * 0.1
         bank_penalty = -abs(phi) * 0.5
+        shaping_reward = alpha_penalty + bank_penalty
 
-        return alpha_penalty + bank_penalty
+        # Per-step cost while departed -- rewards recovering FASTER, not
+        # just eventually. Zero once back in controlled flight.
+        departed_penalty = -1.0 if self._was_departed else 0.0
+
+        # Large terminal signals tied to how the episode actually ended.
+        terminal_bonus = 0.0
+        if termination_reason == "recovered":
+            terminal_bonus = 200.0
+        elif termination_reason in ("crashed", "unrecoverable_attitude"):
+            terminal_bonus = -200.0
+
+        return shaping_reward + departed_penalty + terminal_bonus
 
     def close(self):
         pass
