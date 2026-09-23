@@ -29,13 +29,13 @@ class RLlibJSBSimEnv(JSBSimEnv):
         super().__init__(
             aircraft=config.get("aircraft", "c172p"),
             agent_hz=config.get("agent_hz", 20),
+            departed_start_prob=config.get("departed_start_prob", 0.0),
         )
-
 
 def main():
     config = (
         PPOConfig()
-        .environment(RLlibJSBSimEnv)
+        .environment(RLlibJSBSimEnv, env_config={"departed_start_prob": 0.5})
         .env_runners(num_env_runners=NUM_ENV_RUNNERS)
     )
 
