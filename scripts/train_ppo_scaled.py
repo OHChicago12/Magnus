@@ -22,6 +22,10 @@ from envs.jsbsim_env import JSBSimEnv
 N_ITERATIONS = 20
 NUM_ENV_RUNNERS = 8
 
+CHECKPOINT_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "checkpoints"
+)
+SAVE_EVERY = 5
 
 class RLlibJSBSimEnv(JSBSimEnv):
     def __init__(self, config=None):
@@ -49,6 +53,9 @@ def main():
         reward_mean = result.get("env_runners", {}).get("episode_return_mean", None)
         returns.append(reward_mean)
         print(f"Iteration {i}: episode_return_mean = {reward_mean}")
+        if (i + 1) % SAVE_EVERY == 0:
+            saved = algo.save(os.path.join(CHECKPOINT_DIR, f"iter_{i + 1}"))
+            print(f"Checkpoint saved: {saved.checkpoint.path}")
 
     print("\n--- Summary ---")
     valid_returns = [r for r in returns if r is not None]
@@ -58,6 +65,9 @@ def main():
         print(f"Change: {valid_returns[-1] - valid_returns[0]:.2f}")
     else:
         print("Not enough valid (non-None) returns to compare trend.")
+
+    final = algo.save(os.path.join(CHECKPOINT_DIR, "final"))
+    print(f"Final checkpoint saved: {final.checkpoint.path}")
 
     print("\nPASS: completed all iterations without crashing.")
 
