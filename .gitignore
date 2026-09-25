@@ -9,3 +9,5 @@ checkpoints/
 eval_log.txt
 eval_plot.png
 train_log.txt
+eval_many_log.txt
+requirements_full.txt

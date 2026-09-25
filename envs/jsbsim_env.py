@@ -89,6 +89,8 @@ class JSBSimEnv(gym.Env):
         self._max_steps = 2000  # ~100s of sim time at agent_hz=20
 
     def _set_initial_conditions(self, departed=False):
+        self.fdm.reset_to_initial_conditions(0)
+
         altitude_ft = self.initial_altitude_ft + self.np_random.uniform(
             -self.altitude_randomization_ft, self.altitude_randomization_ft
         )
@@ -128,7 +130,6 @@ class JSBSimEnv(gym.Env):
         self.fdm.run_ic()
         self.fdm.get_propulsion().init_running(-1)
         self.fdm["fcs/mixture-cmd-norm[0]"] = 1.0
-
         wind_north_fps = self.np_random.uniform(
             -self.wind_randomization_fps, self.wind_randomization_fps
         )
