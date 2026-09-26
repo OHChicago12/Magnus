@@ -12,4 +12,4 @@ train_log.txt
 eval_many_log.txt
 requirements_full.txt
 trim_point.npz
-lqr_gains.npz
+lqr_gains.npz*_log.txt
