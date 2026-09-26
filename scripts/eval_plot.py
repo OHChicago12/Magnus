@@ -90,11 +90,11 @@ def collect_traces(env, action_fn, n_episodes):
 
 
 os.makedirs(OUT_DIR, exist_ok=True)
-env = JSBSimEnv()
 
 # --- Part 1: outcome comparison across many seeds ---
 summary = {}
 for name, fn in [("policy", policy_action), ("do-nothing", do_nothing_action)]:
+    env = JSBSimEnv()  # fresh env per baseline -- avoids state leakage between runs
     reasons, mean_ret, std_ret, mean_steps = evaluate(env, fn)
     summary[name] = reasons
     print(f"RESULT {name}: return_mean={mean_ret:.0f} (std {std_ret:.0f}) "
@@ -119,8 +119,10 @@ fig.savefig(os.path.join(OUT_DIR, "outcomes.png"), dpi=150)
 print(f"Saved {os.path.join(OUT_DIR, 'outcomes.png')}")
 
 # --- Part 2: per-step traces for a few sample episodes ---
-policy_traces = collect_traces(env, policy_action, N_TRACE_EPISODES)
-baseline_traces = collect_traces(env, do_nothing_action, N_TRACE_EPISODES)
+policy_env = JSBSimEnv()  # fresh env per baseline -- avoids state leakage between runs
+baseline_env = JSBSimEnv()
+policy_traces = collect_traces(policy_env, policy_action, N_TRACE_EPISODES)
+baseline_traces = collect_traces(baseline_env, do_nothing_action, N_TRACE_EPISODES)
 
 fig, axes = plt.subplots(3, N_TRACE_EPISODES, figsize=(5 * N_TRACE_EPISODES, 10), sharex=False)
 if N_TRACE_EPISODES == 1:

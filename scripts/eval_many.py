@@ -68,8 +68,8 @@ def evaluate(env, action_fn):
     return reasons, np.mean(returns), np.std(returns), np.mean(steps)
 
 
-env = JSBSimEnv()
 for name, fn in [("policy", policy_action), ("do-nothing", do_nothing_action)]:
+    env = JSBSimEnv()  # fresh env per baseline -- avoids state leakage between runs
     reasons, mean_ret, std_ret, mean_steps = evaluate(env, fn)
     print(f"RESULT {name}: return_mean={mean_ret:.0f} (std {std_ret:.0f}) "
           f"steps_mean={mean_steps:.0f} outcomes={dict(reasons)}")
