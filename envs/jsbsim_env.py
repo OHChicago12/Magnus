@@ -29,6 +29,15 @@ class JSBSimEnv(gym.Env):
 
     Action (4,): [aileron, elevator, rudder, throttle], each in [-1, 1]
         (throttle is internally remapped to [0, 1] before being sent to JSBSim)
+
+    info dict (per step):
+        "sim_time_s": float
+        "termination_reason": None | "crashed" | "unrecoverable_attitude" | "recovered"
+        "altitude_ft": float -- not in the observation, so eval/logging code
+            that needs altitude (e.g. eval_visualize.py) must read it from here
+        "reward_components": dict with keys "alpha_shaping", "bank_shaping",
+            "departure_penalty", "terminal_bonus" -- the individual terms
+            that sum to the scalar reward, for diagnostic plotting
     """
 
     metadata = {"render_modes": []}
@@ -192,11 +201,13 @@ class JSBSimEnv(gym.Env):
 
         terminated, termination_reason = self._check_termination(obs)
         truncated = self._steps >= self._max_steps
-        reward = self._compute_reward(obs, termination_reason)
+        reward, reward_components = self._compute_reward(obs, termination_reason)
 
         info = {
             "sim_time_s": self.fdm.get_sim_time(),
             "termination_reason": termination_reason,
+            "altitude_ft": self.fdm["position/h-sl-ft"],
+            "reward_components": reward_components,
         }
         return obs, reward, terminated, truncated, info
 
@@ -252,6 +263,9 @@ class JSBSimEnv(gym.Env):
         return False, None
 
     def _compute_reward(self, obs, termination_reason):
+        """Returns (scalar_reward, components_dict). The components dict is
+        purely for diagnostics/plotting (see eval_visualize.py) -- its
+        values always sum to the returned scalar."""
         alpha = obs[6]   # AoA, degrees
         phi = obs[0]     # roll, radians
 
@@ -261,7 +275,6 @@ class JSBSimEnv(gym.Env):
         safe_alpha_deg = 8.0
         alpha_penalty = -abs(alpha - safe_alpha_deg) * 0.1
         bank_penalty = -abs(phi) * 0.5
-        shaping_reward = alpha_penalty + bank_penalty
 
         # Per-step cost while departed -- rewards recovering FASTER, not
         # just eventually. Zero once back in controlled flight.
@@ -274,7 +287,14 @@ class JSBSimEnv(gym.Env):
         elif termination_reason in ("crashed", "unrecoverable_attitude"):
             terminal_bonus = -200.0
 
-        return shaping_reward + departed_penalty + terminal_bonus
+        components = {
+            "alpha_shaping": alpha_penalty,
+            "bank_shaping": bank_penalty,
+            "departure_penalty": departed_penalty,
+            "terminal_bonus": terminal_bonus,
+        }
+        reward = sum(components.values())
+        return reward, components
 
     def close(self):
         pass
