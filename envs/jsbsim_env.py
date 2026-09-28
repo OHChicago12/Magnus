@@ -58,6 +58,12 @@ class JSBSimEnv(gym.Env):
         attitude_randomization_deg=5,
         wind_randomization_fps=15,
         departed_start_prob=0.0,
+        # Departed-spawn severity range -- widen these to stress-test
+        # recovery beyond the range seen during the original training run.
+        departed_alpha_range_deg=(16, 25),
+        departed_bank_range_deg=(0, 30),
+        departed_airspeed_range_kts=(40, 60),
+        departed_yaw_rate_range=(0.6, 1.2),
     ):
         super().__init__()
 
@@ -74,6 +80,10 @@ class JSBSimEnv(gym.Env):
         self.attitude_randomization_deg = attitude_randomization_deg
         self.wind_randomization_fps = wind_randomization_fps
         self.departed_start_prob = departed_start_prob
+        self.departed_alpha_range_deg = departed_alpha_range_deg
+        self.departed_bank_range_deg = departed_bank_range_deg
+        self.departed_airspeed_range_kts = departed_airspeed_range_kts
+        self.departed_yaw_rate_range = departed_yaw_rate_range
 
         root_dir = root_dir or jsbsim.get_default_root_dir()
         self.fdm = jsbsim.FGFDMExec(jsbsim.get_default_root_dir())
@@ -97,6 +107,17 @@ class JSBSimEnv(gym.Env):
         self._steps = 0
         self._max_steps = 2000  # ~100s of sim time at agent_hz=20
 
+        # Shared thresholds between _check_termination and _compute_reward --
+        # kept as instance attrs (not re-declared in each method) so a soft
+        # reward penalty and the hard termination limit can't drift apart.
+        self.UNRECOVERABLE_BANK_DEG = 150.0
+        self.UNRECOVERABLE_PITCH_DEG = 85.0
+        # Soft barrier starts here, well before the hard limit, so the
+        # policy gets pushed away from the edge instead of only being
+        # punished after already crossing it (added after eval showed 84%
+        # of unrecoverable_attitude failures were pitch-driven, not bank).
+        self.PITCH_SOFT_LIMIT_DEG = 55.0
+
     def _set_initial_conditions(self, departed=False):
         self.fdm.reset_to_initial_conditions(0)
 
@@ -118,12 +139,12 @@ class JSBSimEnv(gym.Env):
         p_rad = 0.0
         r_rad = 0.0
         if departed:
-            airspeed_kts = self.np_random.uniform(40, 60)
-            alpha_deg = self.np_random.uniform(16, 25)
+            airspeed_kts = self.np_random.uniform(*self.departed_airspeed_range_kts)
+            alpha_deg = self.np_random.uniform(*self.departed_alpha_range_deg)
             gamma_deg = self.np_random.uniform(-10, 0)
-            phi_deg = self.np_random.choice([-1, 1]) * self.np_random.uniform(0, 30)
+            phi_deg = self.np_random.choice([-1, 1]) * self.np_random.uniform(*self.departed_bank_range_deg)
             p_rad = self.np_random.uniform(-1.0, 1.0)
-            r_rad = self.np_random.choice([-1, 1]) * self.np_random.uniform(0.6, 1.2)
+            r_rad = self.np_random.choice([-1, 1]) * self.np_random.uniform(*self.departed_yaw_rate_range)
 
         self.fdm["ic/h-sl-ft"] = altitude_ft
         self.fdm["ic/vc-kts"] = airspeed_kts
@@ -148,6 +169,22 @@ class JSBSimEnv(gym.Env):
         self.fdm["atmosphere/wind-north-fps"] = wind_north_fps
         self.fdm["atmosphere/wind-east-fps"] = wind_east_fps
 
+        # Stash what was actually sampled this reset, for diagnostics -- lets
+        # eval code correlate outcome with e.g. bank sign or yaw-rate
+        # magnitude rather than just the requested +/- range.
+        self._last_spawn_params = {
+            "departed": departed,
+            "altitude_ft": altitude_ft,
+            "airspeed_kts": airspeed_kts,
+            "phi_deg": phi_deg,
+            "alpha_deg": alpha_deg,
+            "gamma_deg": gamma_deg,
+            "p_rad": p_rad,
+            "r_rad": r_rad,
+            "wind_north_fps": wind_north_fps,
+            "wind_east_fps": wind_east_fps,
+        }
+
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.fdm.set_dt(self.dt)
@@ -159,8 +196,10 @@ class JSBSimEnv(gym.Env):
         self._set_initial_conditions(departed=departed)
         self._steps = 0
         self._was_departed = departed  # departed spawns count as departed from step 0
+        self._started_departed = departed  # fixed at reset; _was_departed can flip
+                                            # true later even for a normal-start episode
         self._recovery_streak = 0
-        return self._get_obs(), {}
+        return self._get_obs(), {"spawn_params": self._last_spawn_params}
 
     def _get_obs(self):
         fdm = self.fdm
@@ -208,6 +247,14 @@ class JSBSimEnv(gym.Env):
             "termination_reason": termination_reason,
             "altitude_ft": self.fdm["position/h-sl-ft"],
             "reward_components": reward_components,
+            "was_departed": self._was_departed,       # true if departure has EVER
+                                                        # occurred so far this episode
+            "started_departed": self._started_departed,  # true if this episode's
+                                                            # reset() spawned it already
+                                                            # past the departure threshold
+            "recovery_streak": self._recovery_streak,  # consecutive steps currently
+                                                          # inside the safe zone since
+                                                          # departure; hits 20 -> recovered
         }
         return obs, reward, terminated, truncated, info
 
@@ -218,14 +265,14 @@ class JSBSimEnv(gym.Env):
 
         # Placeholder thresholds -- NOT validated against a real flight
         # envelope yet. Expect to revisit these once real airframe data
-        # is available.
+        # is available. UNRECOVERABLE_BANK_DEG / UNRECOVERABLE_PITCH_DEG
+        # are set once in __init__ (shared with _compute_reward's soft
+        # barrier) rather than redeclared here.
         DEPARTURE_ALPHA_DEG = 15.0
         DEPARTURE_BANK_DEG = 60.0
         RECOVERY_ALPHA_DEG = 8.0
         RECOVERY_BANK_DEG = 20.0
         CRASH_ALTITUDE_FT = 50
-        UNRECOVERABLE_BANK_DEG = 150
-        UNRECOVERABLE_PITCH_DEG = 85
 
         # Track whether the aircraft has departed controlled flight at any
         # point this episode. Sticky for the rest of the episode -- once
@@ -239,7 +286,7 @@ class JSBSimEnv(gym.Env):
             return True, "crashed"
 
         # Failure: attitude so extreme, recovery is not realistic.
-        if abs(phi) > np.deg2rad(UNRECOVERABLE_BANK_DEG) or abs(theta) > np.deg2rad(UNRECOVERABLE_PITCH_DEG):
+        if abs(phi) > np.deg2rad(self.UNRECOVERABLE_BANK_DEG) or abs(theta) > np.deg2rad(self.UNRECOVERABLE_PITCH_DEG):
             return True, "unrecoverable_attitude"
 
         # Success: controlled flight regained after a genuine departure,
@@ -268,6 +315,8 @@ class JSBSimEnv(gym.Env):
         values always sum to the returned scalar."""
         alpha = obs[6]   # AoA, degrees
         phi = obs[0]     # roll, radians
+        theta = obs[1]   # pitch, radians
+        pitch_deg = np.rad2deg(theta)
 
         # Placeholder magnitudes -- not validated, just enough to give PPO
         # a directionally sensible signal. Expect to retune these once
@@ -275,6 +324,20 @@ class JSBSimEnv(gym.Env):
         safe_alpha_deg = 8.0
         alpha_penalty = -abs(alpha - safe_alpha_deg) * 0.1
         bank_penalty = -abs(phi) * 0.5
+
+        # Soft pitch barrier: ramps up as pitch approaches the hard
+        # UNRECOVERABLE_PITCH_DEG termination limit, instead of only being
+        # punished by the flat terminal penalty after already crossing it.
+        # Added after eval showed 84% of unrecoverable_attitude failures
+        # were pitch-driven (policy overshooting nose-up during recovery),
+        # not bank-driven -- this should discourage overshooting rather
+        # than just discouraging AoA magnitude, which doesn't distinguish
+        # a controlled pull from a runaway one.
+        pitch_overshoot_deg = max(0.0, abs(pitch_deg) - self.PITCH_SOFT_LIMIT_DEG)
+        # Quadratic, not linear -- a small overshoot barely registers, but
+        # the penalty grows sharply as pitch approaches the hard 85deg limit
+        # (30deg of overshoot at the soft limit -> ~-9 penalty this step).
+        pitch_barrier_penalty = -0.01 * (pitch_overshoot_deg ** 2)
 
         # Per-step cost while departed -- rewards recovering FASTER, not
         # just eventually. Zero once back in controlled flight.
@@ -290,6 +353,7 @@ class JSBSimEnv(gym.Env):
         components = {
             "alpha_shaping": alpha_penalty,
             "bank_shaping": bank_penalty,
+            "pitch_barrier": pitch_barrier_penalty,
             "departure_penalty": departed_penalty,
             "terminal_bonus": terminal_bonus,
         }

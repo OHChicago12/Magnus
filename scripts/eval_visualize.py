@@ -54,7 +54,7 @@ except ImportError:
 # in kts/deg); "altitude" isn't in the observation, so it's read from info.
 STATE_KEYS = ["pitch", "roll", "airspeed", "aoa", "altitude"]
 # Must match the keys in JSBSimEnv._compute_reward's returned components dict.
-REWARD_KEYS = ["alpha_shaping", "bank_shaping", "departure_penalty", "terminal_bonus"]
+REWARD_KEYS = ["alpha_shaping", "bank_shaping", "pitch_barrier", "departure_penalty", "terminal_bonus"]
 
 # obs layout, per JSBSimEnv: [phi, theta, psi, p, q, r, alpha, beta, vc]
 OBS_PHI_IDX = 0
@@ -101,10 +101,16 @@ def rollout_episode(module, env, deterministic=True, max_steps=2000):
     altitude and reward_components from `info` (added in jsbsim_env.py).
     """
     obs, info = env.reset()
+    spawn_params = info.get("spawn_params", {})
     trace = {k: [] for k in STATE_KEYS}
     reward_trace = {k: [] for k in REWARD_KEYS}
     total_reward = 0.0
     termination_reason = "truncated"
+    started_departed = info.get("started_departed", None)
+    ever_departed = False
+    departure_step = 0 if started_departed else None
+    recovery_step = None
+    unrecoverable_axis = None
 
     for _ in range(max_steps):
         action = get_action(module, obs, deterministic=deterministic)
@@ -121,9 +127,34 @@ def rollout_episode(module, env, deterministic=True, max_steps=2000):
         for k in REWARD_KEYS:
             reward_trace[k].append(rc.get(k, 0.0))
 
+        if started_departed is None:
+            started_departed = info.get("started_departed", None)
+        was_departed_now = info.get("was_departed", False)
+        if was_departed_now and not ever_departed and departure_step is None:
+            departure_step = len(trace[STATE_KEYS[0]]) - 1  # step just recorded
+        ever_departed = ever_departed or was_departed_now
+
         if terminated or truncated:
             if terminated:
                 termination_reason = info.get("termination_reason") or "recovered"
+                if termination_reason == "recovered":
+                    recovery_step = len(trace[STATE_KEYS[0]]) - 1
+                elif termination_reason == "unrecoverable_attitude":
+                    # Which threshold actually got crossed -- pitch (85deg) or
+                    # bank (150deg) -- since "unrecoverable_attitude" alone
+                    # doesn't say which axis ran away.
+                    final_pitch = abs(trace["pitch"][-1])
+                    final_roll = abs(trace["roll"][-1])
+                    pitch_over = final_pitch >= 85.0
+                    bank_over = final_roll >= 150.0
+                    if pitch_over and bank_over:
+                        unrecoverable_axis = "both"
+                    elif pitch_over:
+                        unrecoverable_axis = "pitch"
+                    elif bank_over:
+                        unrecoverable_axis = "bank"
+                    else:
+                        unrecoverable_axis = "neither (borderline/race condition)"
             else:
                 termination_reason = "truncated"
             break
@@ -134,17 +165,98 @@ def rollout_episode(module, env, deterministic=True, max_steps=2000):
         "total_reward": total_reward,
         "termination_reason": termination_reason,
         "length": len(trace[STATE_KEYS[0]]),
+        "started_departed": bool(started_departed),
+        "ever_departed": ever_departed,
+        "departure_step": departure_step,
+        "recovery_step": recovery_step,
+        "recovery_time_steps": (
+            (recovery_step - departure_step)
+            if (recovery_step is not None and departure_step is not None) else None
+        ),
+        "spawn_params": spawn_params,
+        "unrecoverable_axis": unrecoverable_axis,
     }
 
 
-def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0):
-    """Run n_episodes for each checkpoint. Returns {checkpoint_path: {...}}."""
+def _print_correlation_breakdown(episodes):
+    """Split recovery rate by spawn-parameter sign/magnitude, for episodes
+    that started already departed (spawn_params is only meaningful there).
+    Helps distinguish "genuine severity cliff" from "got a bad/good draw of
+    bank direction, yaw rate, or wind this seed" -- see the 33deg seed-0 vs
+    seed-100 discrepancy that motivated this."""
+    departed_eps = [ep for ep in episodes if ep["started_departed"] and ep["spawn_params"]]
+    if not departed_eps:
+        return
+
+    def recovery_rate(subset):
+        if not subset:
+            return None
+        n_recovered = sum(1 for ep in subset if ep["termination_reason"] == "recovered")
+        return n_recovered, len(subset)
+
+    print("  --- spawn-parameter correlation (departed-start episodes only) ---")
+
+    for label, key in [("bank sign", "phi_deg"), ("yaw rate sign", "r_rad")]:
+        pos = [ep for ep in departed_eps if ep["spawn_params"].get(key, 0) > 0]
+        neg = [ep for ep in departed_eps if ep["spawn_params"].get(key, 0) < 0]
+        rp, rn = recovery_rate(pos), recovery_rate(neg)
+        if rp and rn:
+            print(f"    {label}: positive {rp[0]}/{rp[1]} recovered, "
+                  f"negative {rn[0]}/{rn[1]} recovered")
+
+    # Yaw-rate magnitude, split at the median of what was actually sampled --
+    # tests whether harder spins (higher |r|) specifically fail more.
+    yaw_mags = sorted(abs(ep["spawn_params"].get("r_rad", 0)) for ep in departed_eps)
+    if yaw_mags:
+        median_mag = yaw_mags[len(yaw_mags) // 2]
+        low = [ep for ep in departed_eps if abs(ep["spawn_params"].get("r_rad", 0)) <= median_mag]
+        high = [ep for ep in departed_eps if abs(ep["spawn_params"].get("r_rad", 0)) > median_mag]
+        rl, rh = recovery_rate(low), recovery_rate(high)
+        if rl and rh:
+            print(f"    yaw rate magnitude: low (<= {median_mag:.2f} rad/s) "
+                  f"{rl[0]}/{rl[1]} recovered, high {rh[0]}/{rh[1]} recovered")
+
+
+def _print_unrecoverable_axis_breakdown(episodes):
+    """Among unrecoverable_attitude failures, count which axis (pitch, bank,
+    or both) actually crossed its threshold -- motivated by a specific pair
+    of episodes where both looked like pitch runaway rather than bank
+    divergence despite being tagged the same generic failure reason."""
+    unrec = [ep for ep in episodes if ep["termination_reason"] == "unrecoverable_attitude"]
+    if not unrec:
+        return
+    counts = defaultdict(int)
+    for ep in unrec:
+        counts[ep["unrecoverable_axis"] or "unknown"] += 1
+    print(f"  unrecoverable_attitude breakdown (of {len(unrec)}): {dict(counts)}")
+
+
+def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0, departed_start_prob=0.5,
+                          aircraft="c172p", departed_alpha_range_deg=(16, 25),
+                          departed_bank_range_deg=(0, 30)):
+    """Run n_episodes for each checkpoint. Returns {checkpoint_path: {...}}.
+
+    departed_start_prob must match (or intentionally differ from) what the
+    checkpoint was trained with -- JSBSimEnv defaults to 0.0, but
+    train_ppo_scaled.py trains with 0.5, so leaving this at the JSBSimEnv
+    default here would silently test a totally different distribution of
+    episodes than what the policy was trained/is meant to handle.
+
+    aircraft/departed_alpha_range_deg/departed_bank_range_deg let you push
+    beyond what training used (aircraft="c172p", alpha 16-25deg, bank 0-30deg)
+    to stress-test generalization and recovery under harsher conditions.
+    """
     results = {}
     for ckpt in checkpoint_paths:
         print(f"Evaluating checkpoint: {ckpt}")
         algo = load_policy(ckpt)
         module = algo.get_module()  # default policy's RLModule
-        env = JSBSimEnv()
+        env = JSBSimEnv(
+            aircraft=aircraft,
+            departed_start_prob=departed_start_prob,
+            departed_alpha_range_deg=departed_alpha_range_deg,
+            departed_bank_range_deg=departed_bank_range_deg,
+        )
 
         episodes = []
         for ep in range(n_episodes):
@@ -152,8 +264,12 @@ def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0):
             episodes.append(rollout_episode(module, env))
 
         outcome_counts = defaultdict(int)
+        started_departed_count = 0
+        ever_departed_count = 0
         for ep in episodes:
             outcome_counts[ep["termination_reason"]] += 1
+            started_departed_count += int(ep["started_departed"])
+            ever_departed_count += int(ep["ever_departed"])
 
         results[ckpt] = {
             "episodes": episodes,
@@ -161,6 +277,20 @@ def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0):
             "n_episodes": n_episodes,
         }
         print(f"  outcomes: {dict(outcome_counts)}")
+        print(f"  started already departed: {started_departed_count}/{n_episodes}")
+        print(f"  ever departed (started or during episode): {ever_departed_count}/{n_episodes}")
+
+        recovery_times = [
+            ep["recovery_time_steps"] for ep in episodes
+            if ep["recovery_time_steps"] is not None
+        ]
+        if recovery_times:
+            print(f"  recovery time (steps, among {len(recovery_times)} recovered episodes): "
+                  f"min={min(recovery_times)}, max={max(recovery_times)}, "
+                  f"mean={sum(recovery_times)/len(recovery_times):.0f}")
+
+        _print_correlation_breakdown(episodes)
+        _print_unrecoverable_axis_breakdown(episodes)
 
         algo.stop()
         env.close()
@@ -221,6 +351,58 @@ def plot_comparison(results, out_dir="plots"):
     return figures
 
 
+def plot_bank_sign_comparison(results, out_dir="plots"):
+    """For departed-start episodes, pick one representative failed episode
+    from positive-bank spawns and one from negative-bank spawns (per
+    checkpoint) and overlay their trajectories. Only meaningful when the
+    correlation breakdown showed a real bank-sign gap in recovery rate."""
+    os.makedirs(out_dir, exist_ok=True)
+    figures = {}
+
+    for ck, res in results.items():
+        departed_eps = [
+            ep for ep in res["episodes"]
+            if ep["started_departed"] and ep["spawn_params"]
+        ]
+        pos_failed = [ep for ep in departed_eps
+                      if ep["spawn_params"].get("phi_deg", 0) > 0
+                      and ep["termination_reason"] != "recovered"]
+        neg_failed = [ep for ep in departed_eps
+                      if ep["spawn_params"].get("phi_deg", 0) < 0
+                      and ep["termination_reason"] != "recovered"]
+        if not pos_failed or not neg_failed:
+            print(f"  (skipping bank-sign plot for {ck}: not enough failed "
+                  f"episodes on both sides -- pos={len(pos_failed)}, neg={len(neg_failed)})")
+            continue
+
+        # Longest-running failure on each side -- most informative to look at.
+        pos_ep = max(pos_failed, key=lambda e: e["length"])
+        neg_ep = max(neg_failed, key=lambda e: e["length"])
+
+        fig, axes = plt.subplots(len(STATE_KEYS), 1, figsize=(9, 11), sharex=True)
+        for label, ep in [("positive bank spawn", pos_ep), ("negative bank spawn", neg_ep)]:
+            t = np.arange(ep["length"])
+            phi0 = ep["spawn_params"].get("phi_deg", 0)
+            r0 = ep["spawn_params"].get("r_rad", 0)
+            full_label = (f"{label} (phi0={phi0:.0f}deg, r0={r0:.2f}rad/s, "
+                           f"outcome={ep['termination_reason']})")
+            for ax, key in zip(axes, STATE_KEYS):
+                ax.plot(t, ep["trace"][key], label=full_label)
+                ax.set_ylabel(key)
+                ax.grid(alpha=0.3)
+        axes[0].legend(loc="upper right", fontsize=7)
+        axes[-1].set_xlabel("step")
+        fig.suptitle(f"{os.path.basename(ck)} — failed recovery, positive vs negative bank spawn")
+        fig.tight_layout()
+        fname = f"{os.path.basename(ck)}_bank_sign_comparison.png".replace("/", "_")
+        fig.savefig(os.path.join(out_dir, fname), dpi=150)
+        figures[f"{os.path.basename(ck)}_bank_sign"] = fig
+
+    if figures:
+        print(f"Saved {len(figures)} bank-sign comparison figure(s) to {out_dir}/")
+    return figures
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoints", nargs="+", required=True,
@@ -229,10 +411,40 @@ def main():
                          help="Episodes to roll out per checkpoint")
     parser.add_argument("--out", default="plots", help="Output directory for PNGs")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--departed-start-prob", type=float, default=0.5,
+                         help="Fraction of eval episodes that spawn already-departed "
+                              "(stalled/spun). Should match training's env_config "
+                              "unless you're deliberately testing a different mix "
+                              "(default 0.5, matching train_ppo_scaled.py)")
+    parser.add_argument("--aircraft", default="c172p",
+                         help="JSBSim aircraft model to evaluate against (default "
+                              "c172p, matching training). Try another JSBSim-bundled "
+                              "aircraft name to test cross-airframe generalization.")
+    parser.add_argument("--departed-alpha-min", type=float, default=16.0)
+    parser.add_argument("--departed-alpha-max", type=float, default=25.0,
+                         help="Departed-spawn AoA range in degrees (default 16-25, "
+                              "matching training). Raise --departed-alpha-max to "
+                              "stress-test recovery from more extreme departures.")
+    parser.add_argument("--departed-bank-max", type=float, default=30.0,
+                         help="Max departed-spawn bank angle in degrees (default 30, "
+                              "matching training). Raise to stress-test steeper "
+                              "departures.")
+    parser.add_argument("--bank-sign-analysis", action="store_true",
+                         help="Also generate a plot comparing a representative "
+                              "failed recovery from positive-bank vs negative-bank "
+                              "departed spawns.")
     args = parser.parse_args()
 
-    results = evaluate_checkpoints(args.checkpoints, n_episodes=args.episodes, seed=args.seed)
+    results = evaluate_checkpoints(
+        args.checkpoints, n_episodes=args.episodes, seed=args.seed,
+        departed_start_prob=args.departed_start_prob,
+        aircraft=args.aircraft,
+        departed_alpha_range_deg=(args.departed_alpha_min, args.departed_alpha_max),
+        departed_bank_range_deg=(0, args.departed_bank_max),
+    )
     plot_comparison(results, out_dir=args.out)
+    if args.bank_sign_analysis:
+        plot_bank_sign_comparison(results, out_dir=args.out)
 
 
 if __name__ == "__main__":

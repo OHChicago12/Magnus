@@ -54,7 +54,14 @@ def main():
         "--iterations", type=int, default=N_ITERATIONS,
         help=f"Total iterations to run (default {N_ITERATIONS})"
     )
+    parser.add_argument(
+        "--checkpoint-dir", default=CHECKPOINT_DIR,
+        help=f"Directory to save checkpoints under (default {CHECKPOINT_DIR}). "
+             "Use a fresh directory (e.g. checkpoints_v2) when the reward "
+             "function or env changed, so old and new checkpoints don't mix."
+    )
     args = parser.parse_args()
+    checkpoint_dir = args.checkpoint_dir
 
     if args.resume:
         print(f"Resuming from checkpoint: {args.resume}")
@@ -81,13 +88,13 @@ def main():
             returns.append(reward_mean)
             print(f"Iteration {i}: episode_return_mean = {reward_mean}")
             if (i + 1) % SAVE_EVERY == 0:
-                saved = algo.save(os.path.join(CHECKPOINT_DIR, f"iter_{i + 1}"))
+                saved = algo.save(os.path.join(checkpoint_dir, f"iter_{i + 1}"))
                 print(f"Checkpoint saved: {saved.checkpoint.path}")
     except KeyboardInterrupt:
         # Save on manual interrupt (Ctrl-C) so a deliberate stop doesn't lose
         # progress since the last SAVE_EVERY boundary.
         print("\nInterrupted -- saving checkpoint before exit...")
-        saved = algo.save(os.path.join(CHECKPOINT_DIR, f"iter_{start_iter + len(returns)}_interrupted"))
+        saved = algo.save(os.path.join(checkpoint_dir, f"iter_{start_iter + len(returns)}_interrupted"))
         print(f"Checkpoint saved: {saved.checkpoint.path}")
         return
 
@@ -100,7 +107,7 @@ def main():
     else:
         print("Not enough valid (non-None) returns to compare trend.")
 
-    final = algo.save(os.path.join(CHECKPOINT_DIR, "final"))
+    final = algo.save(os.path.join(checkpoint_dir, "final"))
     print(f"Final checkpoint saved: {final.checkpoint.path}")
 
     print("\nPASS: completed all iterations without crashing.")
