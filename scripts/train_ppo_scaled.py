@@ -61,7 +61,9 @@ def main():
              "function or env changed, so old and new checkpoints don't mix."
     )
     args = parser.parse_args()
-    checkpoint_dir = args.checkpoint_dir
+    # RLlib's save() hands the path to pyarrow, which rejects relative paths
+    # ("URI has empty scheme"), so resolve it to an absolute path first.
+    checkpoint_dir = os.path.abspath(args.checkpoint_dir)
 
     if args.resume:
         print(f"Resuming from checkpoint: {args.resume}")

@@ -1,0 +1,28 @@
+2026-09-30 21:05:24,500	WARNING algorithm_config.py:5160 -- You are running PPO on the new API stack! This is the new default behavior for this algorithm. If you don't want to use the new API stack, set `config.api_stack(enable_rl_module_and_learner=False,enable_env_runner_and_connector_v2=False)`. For a detailed migration guide, see here: https://docs.ray.io/en/master/rllib/new-api-stack-migration-guide.html
+[2026-09-30 21:05:24,548 E 8817 21484190] core_worker.cc:2330: Actor with class name: 'SingleAgentEnvRunner' and ID: 'd859debffbf09a149b3d379001000000' has constructor arguments in the object store and max_restarts > 0. If the arguments in the object store go out of scope or are lost, the actor restart will fail. See https://github.com/ray-project/ray/issues/53727 for more details.
+Evaluating checkpoint: checkpoints_v2/iter_2500
+
+
+     JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40
+            [JSBSim-ML v2.0]
+
+JSBSim startup beginning ...
+
+  outcomes: {'recovered': 189, 'unrecoverable_attitude': 4, 'truncated': 6, 'crashed': 1}
+  started already departed: 200/200
+  ever departed (started or during episode): 200/200
+  started departed (n=200): {'recovered': 189, 'unrecoverable_attitude': 4, 'truncated': 6, 'crashed': 1}
+  normal start (n=0): {}
+    fail ep 40: axis=pitch_down, len=246, phi0=57, r0=-1.79, alpha0=29, v0=12, pitch@step0=38, pitch_end=-85
+    fail ep 52: axis=bank, len=587, phi0=-60, r0=-1.82, alpha0=33, v0=18, pitch@step0=48, pitch_end=45
+    fail ep 109: axis=pitch_down, len=36, phi0=-76, r0=2.64, alpha0=17, v0=14, pitch@step0=43, pitch_end=-86
+    fail ep 155: axis=bank, len=38, phi0=46, r0=-2.34, alpha0=26, v0=16, pitch@step0=34, pitch_end=-25
+  departed-start recovery time: min 22, median 51, mean 66, max 799 (n=189)
+  recovery quality (n=189): altitude lost median 7 ft, max 73; min pitch median -28, worst -75 deg; peak airspeed median 19, max 36 kts
+  departed spawn pitch@step0: median 27, max 52 deg
+  --- spawn-parameter correlation (departed-start episodes only) ---
+    bank sign: positive 95/100 recovered, negative 94/100 recovered
+    yaw rate sign: positive 98/101 recovered, negative 91/99 recovered
+    yaw rate magnitude: low (<= 2.30 rad/s) 95/101 recovered, high 94/99 recovered
+  unrecoverable_attitude breakdown (of 4): {'pitch_down': 2, 'bank': 2}
+Saved 2 figures to plots_dr_extreme/

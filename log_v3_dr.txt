@@ -1,0 +1,27 @@
+2026-10-04 21:54:02,033	WARNING algorithm_config.py:5160 -- You are running PPO on the new API stack! This is the new default behavior for this algorithm. If you don't want to use the new API stack, set `config.api_stack(enable_rl_module_and_learner=False,enable_env_runner_and_connector_v2=False)`. For a detailed migration guide, see here: https://docs.ray.io/en/master/rllib/new-api-stack-migration-guide.html
+[2026-10-04 21:54:02,078 E 28135 1501084] core_worker.cc:2330: Actor with class name: 'SingleAgentEnvRunner' and ID: '069bf08a375d4184c8e1d53201000000' has constructor arguments in the object store and max_restarts > 0. If the arguments in the object store go out of scope or are lost, the actor restart will fail. See https://github.com/ray-project/ray/issues/53727 for more details.
+Evaluating checkpoint: checkpoints_v3/iter_2500
+
+
+     JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40
+            [JSBSim-ML v2.0]
+
+JSBSim startup beginning ...
+
+  outcomes: {'truncated': 118, 'recovered': 79, 'unrecoverable_attitude': 3}
+  started already departed: 200/200
+  ever departed (started or during episode): 200/200
+  started departed (n=200): {'truncated': 118, 'recovered': 79, 'unrecoverable_attitude': 3}
+  normal start (n=0): {}
+    fail ep 19: axis=bank, len=1514, phi0=32, r0=2.95, alpha0=34, v0=18, pitch@step0=29, pitch_end=14
+    fail ep 92: axis=bank, len=1252, phi0=46, r0=2.41, alpha0=18, v0=16, pitch@step0=19, pitch_end=25
+    fail ep 111: axis=bank, len=1157, phi0=14, r0=-2.84, alpha0=23, v0=12, pitch@step0=22, pitch_end=12
+  departed-start recovery time: min 26, median 86, mean 179, max 1102 (n=79)
+  recovery quality (n=79): altitude lost median 11 ft, max 45; min pitch median -26, worst -67 deg; peak airspeed median 20, max 28 kts
+  departed spawn pitch@step0: median 26, max 54 deg
+  --- spawn-parameter correlation (departed-start episodes only) ---
+    bank sign: positive 35/94 recovered, negative 44/106 recovered
+    yaw rate sign: positive 50/98 recovered, negative 29/102 recovered
+    yaw rate magnitude: low (<= 2.24 rad/s) 42/101 recovered, high 37/99 recovered
+  unrecoverable_attitude breakdown (of 3): {'bank': 3}
+Saved 2 figures to plots_v3_dr/

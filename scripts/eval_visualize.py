@@ -18,9 +18,10 @@ Assumes:
 """
 
 import argparse
+import json
 import os
 import sys
-from collections import defaultdict
+from collections import defaultdict, deque
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # --- Project-specific imports ---
 from envs.jsbsim_env import JSBSimEnv  # noqa: E402
+from envs.rc_env import RCEnv  # noqa: E402
 
 # Ray/RLlib is optional at import time so this file can be inspected/tested
 # without a full Ray install.
@@ -52,7 +54,7 @@ except ImportError:
 # Keys we track per timestep across every episode. "pitch"/"roll" come from
 # obs (converted rad -> deg); "airspeed"/"aoa" come straight from obs (already
 # in kts/deg); "altitude" isn't in the observation, so it's read from info.
-STATE_KEYS = ["pitch", "roll", "airspeed", "aoa", "altitude"]
+STATE_KEYS = ["pitch", "roll", "airspeed", "aoa", "altitude", "elevator", "aileron", "rudder", "p", "r", "q"]
 # Must match the keys in JSBSimEnv._compute_reward's returned components dict.
 REWARD_KEYS = ["alpha_shaping", "bank_shaping", "pitch_barrier", "departure_penalty", "terminal_bonus"]
 
@@ -61,7 +63,9 @@ OBS_PHI_IDX = 0
 OBS_THETA_IDX = 1
 OBS_ALPHA_IDX = 6
 OBS_VC_IDX = 8
-
+# Nominal sensor noise (1-sigma) per obs channel:
+# [phi, theta, psi (rad), p, q, r (rad/s), alpha, beta (deg), vc (kts)]
+OBS_NOISE_STD = np.array([0.009, 0.009, 0.009, 0.02, 0.02, 0.02, 1.0, 1.0, 1.0], dtype=np.float32)
 
 def load_policy(checkpoint_path):
     """Load an RLlib PPO policy from a checkpoint directory."""
@@ -94,7 +98,8 @@ def get_action(module, obs, deterministic=True):
     return action
 
 
-def rollout_episode(module, env, deterministic=True, max_steps=2000):
+def rollout_episode(module, env, deterministic=True, max_steps=2000,
+                    obs_noise=0.0, latency_steps=0, rng=None, obs_gain=None):
     """Run one episode, returning a dict of per-step traces plus outcome info.
 
     Reads pitch/roll/airspeed/aoa from `obs` (per JSBSimEnv's fixed layout),
@@ -112,8 +117,23 @@ def rollout_episode(module, env, deterministic=True, max_steps=2000):
     recovery_step = None
     unrecoverable_axis = None
 
+    noise_std = OBS_NOISE_STD * obs_noise
+    action_queue = None
+
     for _ in range(max_steps):
-        action = get_action(module, obs, deterministic=deterministic)
+        policy_obs = obs
+        if obs_noise > 0:
+            policy_obs = (obs + rng.normal(0.0, noise_std)).astype(np.float32)
+        if obs_gain is not None:
+            policy_obs = (policy_obs * obs_gain).astype(np.float32)
+        action = get_action(module, policy_obs, deterministic=deterministic)
+        if globals().get('BASELINE') == 'zero':
+            action = np.array([0.0, 0.0, 0.0, 0.85], dtype=action.dtype)
+        if latency_steps > 0:
+            if action_queue is None:
+                action_queue = deque([action] * latency_steps)
+            action_queue.append(action)
+            action = action_queue.popleft()
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
 
@@ -122,6 +142,12 @@ def rollout_episode(module, env, deterministic=True, max_steps=2000):
         trace["aoa"].append(obs[OBS_ALPHA_IDX])
         trace["airspeed"].append(obs[OBS_VC_IDX])
         trace["altitude"].append(info.get("altitude_ft", np.nan))
+        trace["elevator"].append(float(action[1]))
+        trace["aileron"].append(float(action[0]))
+        trace["rudder"].append(float(action[2]))
+        trace["p"].append(np.rad2deg(obs[3]))
+        trace["r"].append(np.rad2deg(obs[5]))
+        trace["q"].append(np.rad2deg(obs[4]))
 
         rc = info.get("reward_components", {})
         for k in REWARD_KEYS:
@@ -150,7 +176,7 @@ def rollout_episode(module, env, deterministic=True, max_steps=2000):
                     if pitch_over and bank_over:
                         unrecoverable_axis = "both"
                     elif pitch_over:
-                        unrecoverable_axis = "pitch"
+                        unrecoverable_axis = "pitch_down" if trace["pitch"][-1] < 0 else "pitch_up"
                     elif bank_over:
                         unrecoverable_axis = "bank"
                     else:
@@ -158,6 +184,9 @@ def rollout_episode(module, env, deterministic=True, max_steps=2000):
             else:
                 termination_reason = "truncated"
             break
+
+    if termination_reason == "truncated" and not (started_departed or ever_departed):
+        termination_reason = "never_departed"
 
     return {
         "trace": trace,
@@ -233,7 +262,8 @@ def _print_unrecoverable_axis_breakdown(episodes):
 
 def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0, departed_start_prob=0.5,
                           aircraft="c172p", departed_alpha_range_deg=(16, 25),
-                          departed_bank_range_deg=(0, 30)):
+                          departed_bank_range_deg=(0, 30), obs_noise=0.0, latency_steps=0,
+                          env_kwargs=None, obs_gain=None):
     """Run n_episodes for each checkpoint. Returns {checkpoint_path: {...}}.
 
     departed_start_prob must match (or intentionally differ from) what the
@@ -251,17 +281,23 @@ def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0, departed_start
         print(f"Evaluating checkpoint: {ckpt}")
         algo = load_policy(ckpt)
         module = algo.get_module()  # default policy's RLModule
-        env = JSBSimEnv(
+        env_args = dict(
             aircraft=aircraft,
             departed_start_prob=departed_start_prob,
             departed_alpha_range_deg=departed_alpha_range_deg,
             departed_bank_range_deg=departed_bank_range_deg,
+            **(env_kwargs or {}),
         )
-
+        # sensor-corruption settings only exist on RCEnv
+        use_rc = any(k.startswith("vc_") or k == "smooth_coef" for k in env_args)
+        env = RCEnv(env_args) if use_rc else JSBSimEnv(**env_args)
+        rng = np.random.default_rng(seed)
         episodes = []
         for ep in range(n_episodes):
             env.reset(seed=seed + ep)
-            episodes.append(rollout_episode(module, env))
+            episodes.append(rollout_episode(module, env, obs_noise=obs_noise,
+                                            latency_steps=latency_steps, rng=rng,
+                                            obs_gain=obs_gain))
 
         outcome_counts = defaultdict(int)
         started_departed_count = 0
@@ -279,15 +315,58 @@ def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0, departed_start
         print(f"  outcomes: {dict(outcome_counts)}")
         print(f"  started already departed: {started_departed_count}/{n_episodes}")
         print(f"  ever departed (started or during episode): {ever_departed_count}/{n_episodes}")
+        for label, subset in [
+            ("started departed", [e for e in episodes if e["started_departed"]]),
+            ("normal start",     [e for e in episodes if not e["started_departed"]]),
+        ]:
+            counts = defaultdict(int)
+            for e in subset:
+                counts[e["termination_reason"]] += 1
+            print(f"  {label} (n={len(subset)}): {dict(counts)}")
 
-        recovery_times = [
-            ep["recovery_time_steps"] for ep in episodes
-            if ep["recovery_time_steps"] is not None
-        ]
-        if recovery_times:
-            print(f"  recovery time (steps, among {len(recovery_times)} recovered episodes): "
-                  f"min={min(recovery_times)}, max={max(recovery_times)}, "
-                  f"mean={sum(recovery_times)/len(recovery_times):.0f}")
+        fast = [e for e in episodes if not e["started_departed"]
+                and e["termination_reason"] == "recovered"]
+        if fast:
+            print(f"  normal-start 'recoveries': {len(fast)}, "
+                  f"median length {np.median([e['length'] for e in fast]):.0f} steps")        
+
+        bad = [(i, e) for i, e in enumerate(episodes)
+               if e["termination_reason"] == "unrecoverable_attitude"]
+        for i, e in bad:
+            sp = e["spawn_params"]
+            print(f"    fail ep {i}: axis={e['unrecoverable_axis']}, len={e['length']}, "
+                  f"phi0={sp.get('phi_deg', 0):.0f}, r0={sp.get('r_rad', 0):.2f}, "
+                  f"alpha0={sp.get('alpha_deg', 0) or 0:.0f}, v0={sp.get('airspeed_kts', 0):.0f}, "
+                  f"pitch@step0={e['trace']['pitch'][0]:.0f}, "
+                  f"pitch_end={e['trace']['pitch'][-1]:.0f}")
+
+        trivial = [e for e in fast if e["length"] < 40]
+        if trivial:
+            peak = [max(abs(a) for a in e["trace"]["aoa"][:5]) for e in trivial]
+            print(f"  fast normal-start 'recoveries': {len(trivial)}, "
+                  f"peak |alpha| in first 5 steps: median {np.median(peak):.1f}, max {max(peak):.1f}")
+
+        dep_times = [e["recovery_time_steps"] for e in episodes
+                     if e["started_departed"] and e["recovery_time_steps"] is not None]
+        if dep_times:
+            print(f"  departed-start recovery time: min {min(dep_times)}, "
+                  f"median {np.median(dep_times):.0f}, mean {np.mean(dep_times):.0f}, "
+                  f"max {max(dep_times)} (n={len(dep_times)})")
+
+        rec_dep = [e for e in episodes if e["started_departed"]
+                   and e["termination_reason"] == "recovered"]
+        if rec_dep:
+            alt_lost = [e["trace"]["altitude"][0] - min(e["trace"]["altitude"]) for e in rec_dep]
+            min_pitch = [min(e["trace"]["pitch"]) for e in rec_dep]
+            max_v = [max(e["trace"]["airspeed"]) for e in rec_dep]
+            print(f"  recovery quality (n={len(rec_dep)}): "
+                  f"altitude lost median {np.median(alt_lost):.0f} ft, max {max(alt_lost):.0f}; "
+                  f"min pitch median {np.median(min_pitch):.0f}, worst {min(min_pitch):.0f} deg; "
+                  f"peak airspeed median {np.median(max_v):.0f}, max {max(max_v):.0f} kts")
+
+        p0 = [e["trace"]["pitch"][0] for e in episodes if e["started_departed"]]
+        if p0:
+            print(f"  departed spawn pitch@step0: median {np.median(p0):.0f}, max {max(p0):.0f} deg")
 
         _print_correlation_breakdown(episodes)
         _print_unrecoverable_axis_breakdown(episodes)
@@ -297,10 +376,13 @@ def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0, departed_start
 
     return results
 
-
 def _best_worst_episode(episodes):
     by_reward = sorted(episodes, key=lambda e: e["total_reward"])
-    return by_reward[-1], by_reward[0]  # best, worst
+    best = by_reward[-1]
+    failures = [e for e in episodes
+                if e["termination_reason"] in ("unrecoverable_attitude", "crashed")]
+    worst = min(failures, key=lambda e: e["total_reward"]) if failures else by_reward[0]
+    return best, worst
 
 
 def plot_comparison(results, out_dir="plots"):
@@ -321,7 +403,8 @@ def plot_comparison(results, out_dir="plots"):
         counts = [results[ck]["outcome_counts"].get(reason, 0) for ck in labels]
         ax.bar(x + i * width, counts, width, label=reason)
     ax.set_xticks(x + width * (len(reasons) - 1) / 2)
-    ax.set_xticklabels([os.path.basename(l) for l in labels], rotation=20, ha="right")
+    ax.set_xticklabels(["/".join(os.path.normpath(l).split(os.sep)[-2:]) for l in labels],
+                   rotation=20, ha="right")
     ax.set_ylabel("Episode count")
     ax.set_title("Outcome distribution by checkpoint")
     ax.legend()
@@ -335,7 +418,7 @@ def plot_comparison(results, out_dir="plots"):
     for ck, res in results.items():
         _, worst = _best_worst_episode(res["episodes"])
         t = np.arange(worst["length"])
-        label = f"{os.path.basename(ck)} ({worst['termination_reason']})"
+        label = f"{'/'.join(os.path.normpath(ck).split(os.sep)[-2:])} ({worst['termination_reason']})"
         for ax, key in zip(axes, STATE_KEYS):
             ax.plot(t, worst["trace"][key], label=label)
             ax.set_ylabel(key)
@@ -433,7 +516,38 @@ def main():
                          help="Also generate a plot comparing a representative "
                               "failed recovery from positive-bank vs negative-bank "
                               "departed spawns.")
+    parser.add_argument("--obs-noise", type=float, default=0.0,
+                         help="Sensor noise multiplier on policy inputs (0=none, 1=nominal, 3=harsh)")
+    parser.add_argument("--latency-steps", type=int, default=0,
+                         help="Delay actions by this many agent steps (1 step = 50 ms at 20 Hz)")
+    parser.add_argument("--env-kwargs", default="{}",
+                         help="Extra JSBSimEnv settings as JSON, e.g. '{\"agent_hz\": 60}'")
+    parser.add_argument("--obs-gain", default="",
+                         help="9 comma-separated multipliers on the policy's inputs "
+                              "[phi,theta,psi,p,q,r,alpha,beta,vc]")
+    parser.add_argument("--rc", choices=["raw", "similar"], default=None,
+                         help="Preset for the c172p_rc airframe (use with --aircraft c172p_rc)")
+    parser.add_argument('--baseline', choices=['zero'], default=None,
+                        help='Ignore the policy and send zero actions')
     args = parser.parse_args()
+    globals()['BASELINE'] = args.baseline
+    env_kwargs = json.loads(args.env_kwargs)
+    obs_gain = [float(x) for x in args.obs_gain.split(",")] if args.obs_gain else None
+    if args.rc:
+        base = dict(initial_altitude_ft=500, altitude_randomization_ft=100,
+                    initial_airspeed_kts=30, airspeed_randomization_kts=4,
+                    departed_airspeed_range_kts=(12, 18),
+                    departed_yaw_rate_range=(1.5, 3.0),
+                    wind_randomization_fps=4)
+        if args.rc == "similar":
+            base["agent_hz"] = 60
+            if obs_gain is None:
+                obs_gain = [1, 1, 1, 0.425, 0.425, 0.425, 1, 1, 3.6]
+        else:
+            base["agent_hz"] = 20
+        env_kwargs = {**base, **env_kwargs}
+    if obs_gain is not None:
+        obs_gain = np.array(obs_gain, dtype=np.float32)
 
     results = evaluate_checkpoints(
         args.checkpoints, n_episodes=args.episodes, seed=args.seed,
@@ -441,6 +555,10 @@ def main():
         aircraft=args.aircraft,
         departed_alpha_range_deg=(args.departed_alpha_min, args.departed_alpha_max),
         departed_bank_range_deg=(0, args.departed_bank_max),
+        obs_noise=args.obs_noise,
+        latency_steps=args.latency_steps,
+        env_kwargs=env_kwargs,
+        obs_gain=obs_gain,
     )
     plot_comparison(results, out_dir=args.out)
     if args.bank_sign_analysis:

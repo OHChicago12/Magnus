@@ -1,0 +1,375 @@
+"""
+Gymnasium-compatible wrapper around JSBSim for Magnus development.
+
+This environment exposes JSBSim's six-DOF flight dynamics as a standard
+Gym interface so classical controllers (and later, RL agents) can drive
+the same simulation loop without caring what's underneath.
+
+Phase 0 goal: validate the sim <-> controller plumbing using a stock
+JSBSim aircraft (c172p) BEFORE building Magnus's own airframe model.
+Do not spend time tuning against this aircraft's dynamics -- it's
+a placeholder to prove the loop works.
+"""
+
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
+import jsbsim
+
+
+class JSBSimEnv(gym.Env):
+    """
+    Minimal JSBSim environment for attitude-hold development.
+
+    Observation (9,):
+        [phi (roll, rad), theta (pitch, rad), psi (heading, rad),
+         p, q, r (body rates, rad/s),
+         alpha (AoA, deg), beta (sideslip, deg),
+         vc (calibrated airspeed, kts)]
+
+    Action (4,): [aileron, elevator, rudder, throttle], each in [-1, 1]
+        (throttle is internally remapped to [0, 1] before being sent to JSBSim)
+
+    info dict (per step):
+        "sim_time_s": float
+        "termination_reason": None | "crashed" | "unrecoverable_attitude" | "recovered"
+        "altitude_ft": float -- not in the observation, so eval/logging code
+            that needs altitude (e.g. eval_visualize.py) must read it from here
+        "reward_components": dict with keys "alpha_shaping", "bank_shaping",
+            "departure_penalty", "terminal_bonus" -- the individual terms
+            that sum to the scalar reward, for diagnostic plotting
+    """
+
+    metadata = {"render_modes": []}
+
+    def __init__(
+        self,
+        aircraft="c172p",
+        dt=1.0 / 120.0,
+        agent_hz=20,
+        initial_altitude_ft=5000,
+        initial_airspeed_kts=120,
+        root_dir=None,
+        # Domain randomization spreads -- each reset() samples a fresh
+        # initial condition within these +/- ranges. This substitutes for
+        # variation you'd otherwise get from a physical test fleet.
+        altitude_randomization_ft=1000,
+        airspeed_randomization_kts=15,
+        attitude_randomization_deg=5,
+        wind_randomization_fps=15,
+        departed_start_prob=0.0,
+        # Departed-spawn severity range -- widen these to stress-test
+        # recovery beyond the range seen during the original training run.
+        departed_alpha_range_deg=(16, 25),
+        departed_bank_range_deg=(0, 30),
+        departed_airspeed_range_kts=(40, 60),
+        departed_yaw_rate_range=(0.6, 1.2),
+    ):
+        super().__init__()
+
+        self.aircraft = aircraft
+        self.dt = dt
+        # How many JSBSim integration steps per controller ("agent") step.
+        # JSBSim integrates fast (e.g. 120 Hz) while your controller/RL
+        # policy typically runs slower (e.g. 20 Hz) -- this ratio bridges them.
+        self.steps_per_action = max(1, int((1.0 / agent_hz) / dt))
+        self.initial_altitude_ft = initial_altitude_ft
+        self.initial_airspeed_kts = initial_airspeed_kts
+        self.altitude_randomization_ft = altitude_randomization_ft
+        self.airspeed_randomization_kts = airspeed_randomization_kts
+        self.attitude_randomization_deg = attitude_randomization_deg
+        self.wind_randomization_fps = wind_randomization_fps
+        self.departed_start_prob = departed_start_prob
+        self.departed_alpha_range_deg = departed_alpha_range_deg
+        self.departed_bank_range_deg = departed_bank_range_deg
+        self.departed_airspeed_range_kts = departed_airspeed_range_kts
+        self.departed_yaw_rate_range = departed_yaw_rate_range
+
+        self._root_dir = root_dir or jsbsim.get_default_root_dir()
+        self.fdm = self._make_fdm()
+
+        self.action_space = spaces.Box(
+            low=np.array([-1, -1, -1, 0], dtype=np.float32),
+            high=np.array([1, 1, 1, 1], dtype=np.float32),
+        )
+
+        # Generous bounds -- tighten once you know your actual flight envelope.
+        obs_high = np.array(
+            [np.pi, np.pi, 2 * np.pi, 10, 10, 10, 90, 90, 400], dtype=np.float32
+        )
+        obs_low = np.array(
+            [-np.pi, -np.pi, 0.0, -10, -10, -10, -90, -90, -400], dtype=np.float32
+        )
+        self.observation_space = spaces.Box(low=obs_low, high=obs_high)
+
+        self._steps = 0
+        self._max_steps = 2000  # ~100s of sim time at agent_hz=20
+
+        # Shared thresholds between _check_termination and _compute_reward --
+        # kept as instance attrs (not re-declared in each method) so a soft
+        # reward penalty and the hard termination limit can't drift apart.
+        self.UNRECOVERABLE_BANK_DEG = 150.0
+        self.UNRECOVERABLE_PITCH_DEG = 85.0
+        # Soft barrier starts here, well before the hard limit, so the
+        # policy gets pushed away from the edge instead of only being
+        # punished after already crossing it (added after eval showed 84%
+        # of unrecoverable_attitude failures were pitch-driven, not bank).
+        self.PITCH_SOFT_LIMIT_DEG = 55.0
+
+    def _set_initial_conditions(self, departed=False):
+        self.fdm.reset_to_initial_conditions(0)
+
+        altitude_ft = self.initial_altitude_ft + self.np_random.uniform(
+            -self.altitude_randomization_ft, self.altitude_randomization_ft
+        )
+        airspeed_kts = self.initial_airspeed_kts + self.np_random.uniform(
+            -self.airspeed_randomization_kts, self.airspeed_randomization_kts
+        )
+        phi_deg = self.np_random.uniform(
+            -self.attitude_randomization_deg, self.attitude_randomization_deg
+        )
+        theta_deg = self.np_random.uniform(
+            -self.attitude_randomization_deg, self.attitude_randomization_deg
+        )
+
+        alpha_deg = None
+        gamma_deg = 0
+        p_rad = 0.0
+        r_rad = 0.0
+        if departed:
+            airspeed_kts = self.np_random.uniform(*self.departed_airspeed_range_kts)
+            alpha_deg = self.np_random.uniform(*self.departed_alpha_range_deg)
+            gamma_deg = self.np_random.uniform(-10, 0)
+            # Spawn pitch is atan(tan(alpha)/cos(bank)), so limit bank so pitch stays
+            # under the soft limit (conservative when gamma is negative).
+            cos_min = min(1.0, np.tan(np.deg2rad(alpha_deg)) / np.tan(np.deg2rad(self.PITCH_SOFT_LIMIT_DEG)))
+            max_bank_deg = float(np.rad2deg(np.arccos(cos_min)))
+            bank_hi = min(self.departed_bank_range_deg[1], max_bank_deg)
+            bank_lo = min(self.departed_bank_range_deg[0], bank_hi)
+            phi_deg = self.np_random.choice([-1, 1]) * self.np_random.uniform(bank_lo, bank_hi)
+            p_rad = self.np_random.uniform(-1.0, 1.0)
+            r_rad = self.np_random.choice([-1, 1]) * self.np_random.uniform(*self.departed_yaw_rate_range)
+
+        self.fdm["ic/h-sl-ft"] = altitude_ft
+        self.fdm["ic/vc-kts"] = airspeed_kts
+        self.fdm["ic/gamma-deg"] = gamma_deg
+        self.fdm["ic/phi-deg"] = phi_deg
+        if alpha_deg is not None:
+            self.fdm["ic/alpha-deg"] = alpha_deg
+        else:
+            self.fdm["ic/theta-deg"] = theta_deg
+        self.fdm["ic/psi-true-deg"] = 0
+        self.fdm["ic/p-rad_sec"] = p_rad
+        self.fdm["ic/r-rad_sec"] = r_rad
+        self.fdm.run_ic()
+        self.fdm.get_propulsion().init_running(-1)
+        self.fdm["fcs/mixture-cmd-norm[0]"] = 1.0
+        wind_north_fps = self.np_random.uniform(
+            -self.wind_randomization_fps, self.wind_randomization_fps
+        )
+        wind_east_fps = self.np_random.uniform(
+            -self.wind_randomization_fps, self.wind_randomization_fps
+        )
+        self.fdm["atmosphere/wind-north-fps"] = wind_north_fps
+        self.fdm["atmosphere/wind-east-fps"] = wind_east_fps
+
+        # Stash what was actually sampled this reset, for diagnostics -- lets
+        # eval code correlate outcome with e.g. bank sign or yaw-rate
+        # magnitude rather than just the requested +/- range.
+        self._last_spawn_params = {
+            "departed": departed,
+            "altitude_ft": altitude_ft,
+            "airspeed_kts": airspeed_kts,
+            "phi_deg": phi_deg,
+            "alpha_deg": alpha_deg,
+            "gamma_deg": gamma_deg,
+            "p_rad": p_rad,
+            "r_rad": r_rad,
+            "wind_north_fps": wind_north_fps,
+            "wind_east_fps": wind_east_fps,
+        }
+
+    def _make_fdm(self):
+        fdm = jsbsim.FGFDMExec(self._root_dir)
+        fdm.set_debug_level(0)      # also stops the huge config dump on every load
+        fdm.set_dt(self.dt)
+        fdm.load_model(self.aircraft)
+        return fdm
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        self.fdm = self._make_fdm()
+
+        departed = bool((options or {}).get("departed", False))
+        if not departed and self.departed_start_prob > 0:
+            departed = bool(self.np_random.random() < self.departed_start_prob)
+
+        self._set_initial_conditions(departed=departed)
+        self._steps = 0
+        self._was_departed = departed  # departed spawns count as departed from step 0
+        self._started_departed = departed  # fixed at reset; _was_departed can flip
+                                            # true later even for a normal-start episode
+        self._recovery_streak = 0
+        return self._get_obs(), {"spawn_params": self._last_spawn_params}
+
+    def _get_obs(self):
+        fdm = self.fdm
+        return np.array(
+            [
+                fdm["attitude/phi-rad"],
+                fdm["attitude/theta-rad"],
+                fdm["attitude/psi-rad"],
+                fdm["velocities/p-rad_sec"],
+                fdm["velocities/q-rad_sec"],
+                fdm["velocities/r-rad_sec"],
+                fdm["aero/alpha-deg"],
+                fdm["aero/beta-deg"],
+                fdm["velocities/vc-kts"],
+            ],
+            dtype=np.float32,
+        )
+
+    def step(self, action):
+        aileron, elevator, rudder, throttle = action
+        aileron = float(np.clip(aileron, -1, 1))
+        elevator = float(np.clip(elevator, -1, 1))
+        rudder = float(np.clip(rudder, -1, 1))
+        throttle = float(np.clip(throttle, 0.0, 1.0))
+
+        self.fdm["fcs/aileron-cmd-norm"] = aileron
+        self.fdm["fcs/elevator-cmd-norm"] = elevator
+        self.fdm["fcs/rudder-cmd-norm"] = rudder
+        self.fdm["fcs/throttle-cmd-norm[0]"] = throttle
+
+        for _ in range(self.steps_per_action):
+            keep_running = self.fdm.run()
+            if not keep_running:
+                break
+
+        self._steps += 1
+        obs = self._get_obs()
+
+        terminated, termination_reason = self._check_termination(obs)
+        truncated = self._steps >= self._max_steps
+        reward, reward_components = self._compute_reward(obs, termination_reason)
+
+        info = {
+            "sim_time_s": self.fdm.get_sim_time(),
+            "termination_reason": termination_reason,
+            "altitude_ft": self.fdm["position/h-sl-ft"],
+            "reward_components": reward_components,
+            "was_departed": self._was_departed,       # true if departure has EVER
+                                                        # occurred so far this episode
+            "started_departed": self._started_departed,  # true if this episode's
+                                                            # reset() spawned it already
+                                                            # past the departure threshold
+            "recovery_streak": self._recovery_streak,  # consecutive steps currently
+                                                          # inside the safe zone since
+                                                          # departure; hits 20 -> recovered
+        }
+        return obs, reward, terminated, truncated, info
+
+    def _check_termination(self, obs):
+        phi, theta = obs[0], obs[1]
+        alpha = obs[6]
+        altitude = self.fdm["position/h-sl-ft"]
+
+        # Placeholder thresholds -- NOT validated against a real flight
+        # envelope yet. Expect to revisit these once real airframe data
+        # is available. UNRECOVERABLE_BANK_DEG / UNRECOVERABLE_PITCH_DEG
+        # are set once in __init__ (shared with _compute_reward's soft
+        # barrier) rather than redeclared here.
+        DEPARTURE_ALPHA_DEG = 15.0
+        DEPARTURE_BANK_DEG = 60.0
+        RECOVERY_ALPHA_DEG = 8.0
+        RECOVERY_BANK_DEG = 20.0
+        CRASH_ALTITUDE_FT = 50
+
+        # Track whether the aircraft has departed controlled flight at any
+        # point this episode. Sticky for the rest of the episode -- once
+        # departed, always departed, so "recovered" below only fires after
+        # a genuine departure, not trivially at t=0.
+        if abs(alpha) > DEPARTURE_ALPHA_DEG or abs(phi) > np.deg2rad(DEPARTURE_BANK_DEG):
+            self._was_departed = True
+
+        # Failure: hit the ground.
+        if altitude < CRASH_ALTITUDE_FT:
+            return True, "crashed"
+
+        # Failure: attitude so extreme, recovery is not realistic.
+        if abs(phi) > np.deg2rad(self.UNRECOVERABLE_BANK_DEG) or abs(theta) > np.deg2rad(self.UNRECOVERABLE_PITCH_DEG):
+            return True, "unrecoverable_attitude"
+
+        # Success: controlled flight regained after a genuine departure,
+        # sustained for RECOVERY_STREAK_STEPS consecutive steps -- a single
+        # instant inside the safe zone (e.g. randomly passing through it
+        # while still tumbling) does not count as recovery.
+        RECOVERY_STREAK_STEPS = 20  # ~1s at agent_hz=20
+
+        in_recovery_zone = (
+            abs(alpha) < RECOVERY_ALPHA_DEG and abs(phi) < np.deg2rad(RECOVERY_BANK_DEG)
+        )
+
+        if self._was_departed and in_recovery_zone:
+            self._recovery_streak += 1
+        else:
+            self._recovery_streak = 0
+
+        if self._was_departed and self._recovery_streak >= RECOVERY_STREAK_STEPS:
+            return True, "recovered"
+
+        return False, None
+
+    def _compute_reward(self, obs, termination_reason):
+        """Returns (scalar_reward, components_dict). The components dict is
+        purely for diagnostics/plotting (see eval_visualize.py) -- its
+        values always sum to the returned scalar."""
+        alpha = obs[6]   # AoA, degrees
+        phi = obs[0]     # roll, radians
+        theta = obs[1]   # pitch, radians
+        pitch_deg = np.rad2deg(theta)
+
+        # Placeholder magnitudes -- not validated, just enough to give PPO
+        # a directionally sensible signal. Expect to retune these once
+        # real training results are in.
+        safe_alpha_deg = 8.0
+        alpha_penalty = -abs(alpha - safe_alpha_deg) * 0.1
+        bank_penalty = -abs(phi) * 0.5
+
+        # Soft pitch barrier: ramps up as pitch approaches the hard
+        # UNRECOVERABLE_PITCH_DEG termination limit, instead of only being
+        # punished by the flat terminal penalty after already crossing it.
+        # Added after eval showed 84% of unrecoverable_attitude failures
+        # were pitch-driven (policy overshooting nose-up during recovery),
+        # not bank-driven -- this should discourage overshooting rather
+        # than just discouraging AoA magnitude, which doesn't distinguish
+        # a controlled pull from a runaway one.
+        pitch_overshoot_deg = max(0.0, abs(pitch_deg) - self.PITCH_SOFT_LIMIT_DEG)
+        # Quadratic, not linear -- a small overshoot barely registers, but
+        # the penalty grows sharply as pitch approaches the hard 85deg limit
+        # (30deg of overshoot at the soft limit -> ~-9 penalty this step).
+        pitch_barrier_penalty = -0.01 * (pitch_overshoot_deg ** 2)
+
+        # Per-step cost while departed -- rewards recovering FASTER, not
+        # just eventually. Zero once back in controlled flight.
+        departed_penalty = -1.0 if self._was_departed else 0.0
+
+        # Large terminal signals tied to how the episode actually ended.
+        terminal_bonus = 0.0
+        if termination_reason == "recovered":
+            terminal_bonus = 200.0
+        elif termination_reason in ("crashed", "unrecoverable_attitude"):
+            terminal_bonus = -200.0
+
+        components = {
+            "alpha_shaping": alpha_penalty,
+            "bank_shaping": bank_penalty,
+            "pitch_barrier": pitch_barrier_penalty,
+            "departure_penalty": departed_penalty,
+            "terminal_bonus": terminal_bonus,
+        }
+        reward = sum(components.values())
+        return reward, components
+
+    def close(self):
+        pass

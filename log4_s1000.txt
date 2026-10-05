@@ -1,0 +1,26 @@
+2026-09-30 19:42:09,115	WARNING algorithm_config.py:5160 -- You are running PPO on the new API stack! This is the new default behavior for this algorithm. If you don't want to use the new API stack, set `config.api_stack(enable_rl_module_and_learner=False,enable_env_runner_and_connector_v2=False)`. For a detailed migration guide, see here: https://docs.ray.io/en/master/rllib/new-api-stack-migration-guide.html
+[2026-09-30 19:42:09,213 E 1040 21385485] core_worker.cc:2330: Actor with class name: 'SingleAgentEnvRunner' and ID: '2c7e3ffbaee53acee70bdb7301000000' has constructor arguments in the object store and max_restarts > 0. If the arguments in the object store go out of scope or are lost, the actor restart will fail. See https://github.com/ray-project/ray/issues/53727 for more details.
+Evaluating checkpoint: checkpoints_v2/iter_2500
+
+
+     JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40
+            [JSBSim-ML v2.0]
+
+JSBSim startup beginning ...
+
+  outcomes: {'recovered': 198, 'unrecoverable_attitude': 2}
+  started already departed: 200/200
+  ever departed (started or during episode): 200/200
+  started departed (n=200): {'recovered': 198, 'unrecoverable_attitude': 2}
+  normal start (n=0): {}
+    fail ep 120: axis=pitch_down, len=44, phi0=64, r0=-2.18, alpha0=16, v0=13, pitch@step0=34, pitch_end=-85
+    fail ep 177: axis=pitch_down, len=34, phi0=58, r0=-2.44, alpha0=22, v0=12, pitch@step0=34, pitch_end=-86
+  departed-start recovery time: min 23, median 52, mean 52, max 108 (n=198)
+  recovery quality (n=198): altitude lost median 7 ft, max 38; min pitch median -27, worst -84 deg; peak airspeed median 19, max 27 kts
+  departed spawn pitch@step0: median 27, max 53 deg
+  --- spawn-parameter correlation (departed-start episodes only) ---
+    bank sign: positive 98/100 recovered, negative 100/100 recovered
+    yaw rate sign: positive 93/93 recovered, negative 105/107 recovered
+    yaw rate magnitude: low (<= 2.19 rad/s) 100/101 recovered, high 98/99 recovered
+  unrecoverable_attitude breakdown (of 2): {'pitch_down': 2}
+Saved 2 figures to plots_s1000/

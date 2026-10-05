@@ -15,6 +15,10 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 import jsbsim
+try:
+    from .airframe_dr import AirframeVariant
+except ImportError:
+    from airframe_dr import AirframeVariant
 
 
 class JSBSimEnv(gym.Env):
@@ -64,6 +68,9 @@ class JSBSimEnv(gym.Env):
         departed_bank_range_deg=(0, 30),
         departed_airspeed_range_kts=(40, 60),
         departed_yaw_rate_range=(0.6, 1.2),
+        airframe_dr=None,       # True or dict: randomise the airframe every reset
+        servo_tau_s=0.0,        # first-order servo lag (s); 0 = off
+        servo_rate_per_s=0.0,   # servo rate limit (normalised units/s); 0 = off
     ):
         super().__init__()
 
@@ -84,11 +91,15 @@ class JSBSimEnv(gym.Env):
         self.departed_bank_range_deg = departed_bank_range_deg
         self.departed_airspeed_range_kts = departed_airspeed_range_kts
         self.departed_yaw_rate_range = departed_yaw_rate_range
+        self.airframe_dr = airframe_dr
+        self._variant = None
+        self._airframe_params = {}
+        self.servo_tau_s = servo_tau_s
+        self.servo_rate_per_s = servo_rate_per_s
+        self._servo_pos = [0.0, 0.0, 0.0]
 
-        root_dir = root_dir or jsbsim.get_default_root_dir()
-        self.fdm = jsbsim.FGFDMExec(jsbsim.get_default_root_dir())
-        self.fdm.set_dt(self.dt)
-        self.fdm.load_model(self.aircraft)
+        self._root_dir = root_dir or jsbsim.get_default_root_dir()
+        self.fdm = self._make_fdm()
 
         self.action_space = spaces.Box(
             low=np.array([-1, -1, -1, 0], dtype=np.float32),
@@ -111,7 +122,7 @@ class JSBSimEnv(gym.Env):
         # kept as instance attrs (not re-declared in each method) so a soft
         # reward penalty and the hard termination limit can't drift apart.
         self.UNRECOVERABLE_BANK_DEG = 150.0
-        self.UNRECOVERABLE_PITCH_DEG = 85.0
+        self.UNRECOVERABLE_PITCH_DEG = 95.0
         # Soft barrier starts here, well before the hard limit, so the
         # policy gets pushed away from the edge instead of only being
         # punished after already crossing it (added after eval showed 84%
@@ -142,7 +153,13 @@ class JSBSimEnv(gym.Env):
             airspeed_kts = self.np_random.uniform(*self.departed_airspeed_range_kts)
             alpha_deg = self.np_random.uniform(*self.departed_alpha_range_deg)
             gamma_deg = self.np_random.uniform(-10, 0)
-            phi_deg = self.np_random.choice([-1, 1]) * self.np_random.uniform(*self.departed_bank_range_deg)
+            # Spawn pitch is atan(tan(alpha)/cos(bank)), so limit bank so pitch stays
+            # under the soft limit (conservative when gamma is negative).
+            cos_min = min(1.0, np.tan(np.deg2rad(alpha_deg)) / np.tan(np.deg2rad(self.PITCH_SOFT_LIMIT_DEG)))
+            max_bank_deg = float(np.rad2deg(np.arccos(cos_min)))
+            bank_hi = min(self.departed_bank_range_deg[1], max_bank_deg)
+            bank_lo = min(self.departed_bank_range_deg[0], bank_hi)
+            phi_deg = self.np_random.choice([-1, 1]) * self.np_random.uniform(bank_lo, bank_hi)
             p_rad = self.np_random.uniform(-1.0, 1.0)
             r_rad = self.np_random.choice([-1, 1]) * self.np_random.uniform(*self.departed_yaw_rate_range)
 
@@ -185,15 +202,39 @@ class JSBSimEnv(gym.Env):
             "wind_east_fps": wind_east_fps,
         }
 
+    def _dr_rng(self):
+        # separate stream so airframe draws don't shift the spawn draws
+        seed = getattr(self, '_reset_seed', None)
+        if seed is None:
+            return np.random.default_rng(int(self.np_random.integers(2**31)))
+        return np.random.default_rng([int(seed), 7919])
+
+    def _make_fdm(self, randomize=False):
+        fdm = jsbsim.FGFDMExec(self._root_dir)
+        fdm.set_debug_level(0)      # also stops the huge config dump on every load
+        fdm.set_dt(self.dt)
+        model = self.aircraft
+        self._airframe_params = {}
+        if randomize and self.airframe_dr:
+            if self._variant is None:
+                self._variant = AirframeVariant(self._root_dir, self.aircraft)
+            model, self._airframe_params = self._variant.sample(
+                self._dr_rng(), self.airframe_dr)
+        fdm.load_model(model)
+        return fdm
+
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        self.fdm.set_dt(self.dt)
+        self._reset_seed = seed
+        self.fdm = self._make_fdm(randomize=True)
 
         departed = bool((options or {}).get("departed", False))
         if not departed and self.departed_start_prob > 0:
             departed = bool(self.np_random.random() < self.departed_start_prob)
 
         self._set_initial_conditions(departed=departed)
+        if self._airframe_params:
+            self._last_spawn_params["airframe"] = self._airframe_params
         self._steps = 0
         self._was_departed = departed  # departed spawns count as departed from step 0
         self._started_departed = departed  # fixed at reset; _was_departed can flip
@@ -225,12 +266,28 @@ class JSBSimEnv(gym.Env):
         rudder = float(np.clip(rudder, -1, 1))
         throttle = float(np.clip(throttle, 0.0, 1.0))
 
-        self.fdm["fcs/aileron-cmd-norm"] = aileron
-        self.fdm["fcs/elevator-cmd-norm"] = elevator
-        self.fdm["fcs/rudder-cmd-norm"] = rudder
+        servo_on = self.servo_tau_s > 0.0 or self.servo_rate_per_s > 0.0
+        if servo_on and self._steps == 0:
+            self._servo_pos = [0.0, 0.0, 0.0]
+        target = [aileron, elevator, rudder]
+        names = ["fcs/aileron-cmd-norm", "fcs/elevator-cmd-norm", "fcs/rudder-cmd-norm"]
+        if not servo_on:
+            for n, v in zip(names, target):
+                self.fdm[n] = v
         self.fdm["fcs/throttle-cmd-norm[0]"] = throttle
 
         for _ in range(self.steps_per_action):
+            if servo_on:
+                for i, (n, tgt) in enumerate(zip(names, target)):
+                    pos = self._servo_pos[i]
+                    goal = tgt
+                    if self.servo_tau_s > 0.0:
+                        goal = pos + (tgt - pos) * (1.0 - float(np.exp(-self.dt / self.servo_tau_s)))
+                    if self.servo_rate_per_s > 0.0:
+                        max_d = self.servo_rate_per_s * self.dt
+                        goal = pos + max(-max_d, min(max_d, goal - pos))
+                    self._servo_pos[i] = goal
+                    self.fdm[n] = goal
             keep_running = self.fdm.run()
             if not keep_running:
                 break
@@ -286,7 +343,9 @@ class JSBSimEnv(gym.Env):
             return True, "crashed"
 
         # Failure: attitude so extreme, recovery is not realistic.
-        if abs(phi) > np.deg2rad(self.UNRECOVERABLE_BANK_DEG) or abs(theta) > np.deg2rad(self.UNRECOVERABLE_PITCH_DEG):
+        cos_tilt = np.cos(phi) * np.cos(theta)
+        too_inverted = cos_tilt < np.cos(np.deg2rad(self.UNRECOVERABLE_BANK_DEG))
+        if too_inverted or abs(theta) > np.deg2rad(self.UNRECOVERABLE_PITCH_DEG):
             return True, "unrecoverable_attitude"
 
         # Success: controlled flight regained after a genuine departure,
