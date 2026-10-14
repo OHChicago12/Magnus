@@ -1,0 +1,106 @@
+{
+  "control": {
+    "train_planes": {
+      "c172p_rc": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c182": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "pa28": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      }
+    },
+    "test_planes": {
+      "J3Cub": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c310": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "t6texan2": {
+        "recovered": 99,
+        "n": 100,
+        "outcomes": {
+          "recovered": 99,
+          "unrecoverable_attitude": 1
+        }
+      }
+    }
+  },
+  "memory": {
+    "train_planes": {
+      "c172p_rc": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c182": {
+        "recovered": 99,
+        "n": 100,
+        "outcomes": {
+          "recovered": 99,
+          "truncated": 1
+        }
+      },
+      "pa28": {
+        "recovered": 99,
+        "n": 100,
+        "outcomes": {
+          "recovered": 99,
+          "truncated": 1
+        }
+      }
+    },
+    "test_planes": {
+      "J3Cub": {
+        "recovered": 99,
+        "n": 100,
+        "outcomes": {
+          "recovered": 99,
+          "truncated": 1
+        }
+      },
+      "c310": {
+        "recovered": 99,
+        "n": 100,
+        "outcomes": {
+          "recovered": 99,
+          "unrecoverable_attitude": 1
+        }
+      },
+      "t6texan2": {
+        "recovered": 3,
+        "n": 100,
+        "outcomes": {
+          "unrecoverable_attitude": 72,
+          "recovered": 3,
+          "crashed": 16,
+          "truncated": 9
+        }
+      }
+    }
+  }
+}

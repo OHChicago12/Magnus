@@ -68,6 +68,8 @@ class JSBSimEnv(gym.Env):
         departed_bank_range_deg=(0, 30),
         departed_airspeed_range_kts=(40, 60),
         departed_yaw_rate_range=(0.6, 1.2),
+        departed_spawn_pitch_max_deg=55.0,
+        departed_roll_rate_max=1.0,   # rad/s, max initial roll rate of departed spawns
         airframe_dr=None,       # True or dict: randomise the airframe every reset
         servo_tau_s=0.0,        # first-order servo lag (s); 0 = off
         servo_rate_per_s=0.0,   # servo rate limit (normalised units/s); 0 = off
@@ -91,6 +93,8 @@ class JSBSimEnv(gym.Env):
         self.departed_bank_range_deg = departed_bank_range_deg
         self.departed_airspeed_range_kts = departed_airspeed_range_kts
         self.departed_yaw_rate_range = departed_yaw_rate_range
+        self.departed_spawn_pitch_max_deg = departed_spawn_pitch_max_deg
+        self.departed_roll_rate_max = departed_roll_rate_max
         self.airframe_dr = airframe_dr
         self._variant = None
         self._airframe_params = {}
@@ -129,6 +133,7 @@ class JSBSimEnv(gym.Env):
         # of unrecoverable_attitude failures were pitch-driven, not bank).
         self.PITCH_SOFT_LIMIT_DEG = 55.0
 
+
     def _set_initial_conditions(self, departed=False):
         self.fdm.reset_to_initial_conditions(0)
 
@@ -155,12 +160,12 @@ class JSBSimEnv(gym.Env):
             gamma_deg = self.np_random.uniform(-10, 0)
             # Spawn pitch is atan(tan(alpha)/cos(bank)), so limit bank so pitch stays
             # under the soft limit (conservative when gamma is negative).
-            cos_min = min(1.0, np.tan(np.deg2rad(alpha_deg)) / np.tan(np.deg2rad(self.PITCH_SOFT_LIMIT_DEG)))
+            cos_min = min(1.0, np.tan(np.deg2rad(alpha_deg)) / np.tan(np.deg2rad(self.departed_spawn_pitch_max_deg)))
             max_bank_deg = float(np.rad2deg(np.arccos(cos_min)))
             bank_hi = min(self.departed_bank_range_deg[1], max_bank_deg)
             bank_lo = min(self.departed_bank_range_deg[0], bank_hi)
             phi_deg = self.np_random.choice([-1, 1]) * self.np_random.uniform(bank_lo, bank_hi)
-            p_rad = self.np_random.uniform(-1.0, 1.0)
+            p_rad = self.np_random.uniform(-self.departed_roll_rate_max, self.departed_roll_rate_max)
             r_rad = self.np_random.choice([-1, 1]) * self.np_random.uniform(*self.departed_yaw_rate_range)
 
         self.fdm["ic/h-sl-ft"] = altitude_ft
@@ -176,7 +181,8 @@ class JSBSimEnv(gym.Env):
         self.fdm["ic/r-rad_sec"] = r_rad
         self.fdm.run_ic()
         self.fdm.get_propulsion().init_running(-1)
-        self.fdm["fcs/mixture-cmd-norm[0]"] = 1.0
+        for i in range(self.fdm.get_propulsion().get_num_engines()):
+            self.fdm[f"fcs/mixture-cmd-norm[{i}]"] = 1.0
         wind_north_fps = self.np_random.uniform(
             -self.wind_randomization_fps, self.wind_randomization_fps
         )
@@ -274,7 +280,8 @@ class JSBSimEnv(gym.Env):
         if not servo_on:
             for n, v in zip(names, target):
                 self.fdm[n] = v
-        self.fdm["fcs/throttle-cmd-norm[0]"] = throttle
+        for i in range(self.fdm.get_propulsion().get_num_engines()):
+            self.fdm[f"fcs/throttle-cmd-norm[{i}]"] = throttle
 
         for _ in range(self.steps_per_action):
             if servo_on:

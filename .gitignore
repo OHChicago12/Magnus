@@ -17,3 +17,4 @@ lqr_gains.npz
 training_log*.txt
 *.DS_Store
 checkpoints*/
+checkpoints_memexp*/
