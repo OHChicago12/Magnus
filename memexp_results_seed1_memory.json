@@ -1,0 +1,53 @@
+{
+  "memory": {
+    "train_planes": {
+      "c172p_rc": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c182": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "pa28": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      }
+    },
+    "test_planes": {
+      "J3Cub": {
+        "recovered": 0,
+        "n": 100,
+        "outcomes": {
+          "unrecoverable_attitude": 69,
+          "truncated": 31
+        }
+      },
+      "c310": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "t6texan2": {
+        "recovered": 10,
+        "n": 100,
+        "outcomes": {
+          "unrecoverable_attitude": 87,
+          "recovered": 10,
+          "truncated": 3
+        }
+      }
+    }
+  }
+}
