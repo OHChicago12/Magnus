@@ -23,7 +23,7 @@ from envs.multi_plane_env import MultiPlaneEnv
 
 TRAIN_PLANES = ["c172p_rc", "c182", "pa28"]
 TEST_PLANES = ["J3Cub", "c310", "t6texan2"]
-HISTORY = {"control": 1, "memory": 32}
+HISTORY = {"control": 1, "memory": 32, "memory8": 8}
 
 # Copy the rest of your v4 settings from train_ppo_rc.py (servo lag, spawn ranges, etc.)
 ENV_KWARGS = dict(departed_start_prob=1.0)
@@ -57,9 +57,44 @@ class HistoryWrapper(gym.Wrapper):
         self.buf.append(np.concatenate([obs, np.asarray(action).ravel()]).astype(np.float32))
         return self._flat(), r, term, trunc, info
 
+SCALE = [0.6356, 0.1794, 2.6394, 2.0373, 1.162, 0.9199, 6.2644, 16.4452, 7.3381]  # channel spread from your sweep
+
+
+class RandomPerturb(gym.Wrapper):
+    """Each episode: delay readings by 0..max_latency steps and add noise up to max_noise x channel spread."""
+
+    def __init__(self, env, max_latency=2, max_noise=1.0):
+        super().__init__(env)
+        self.scale = np.asarray(SCALE, np.float32)
+        self.max_lat, self.max_noise = max_latency, max_noise
+        self.rng = np.random.default_rng()
+        self.q = collections.deque(maxlen=max_latency + 1)
+        self.k, self.noise = 0, 0.0
+
+    def _out(self):
+        o = np.array(self.q[-1 - self.k], np.float32)
+        return o + (self.rng.normal(0, self.noise, o.shape) * self.scale).astype(np.float32)
+
+    def reset(self, **kw):
+        obs, info = self.env.reset(**kw)
+        if kw.get("seed") is not None:
+            self.rng = np.random.default_rng(kw["seed"])
+        self.k = int(self.rng.integers(0, self.max_lat + 1))
+        self.noise = float(self.rng.uniform(0, self.max_noise))
+        self.q.clear()
+        for _ in range(self.max_lat + 1):
+            self.q.append(obs)
+        return self._out(), info
+
+    def step(self, action):
+        obs, r, term, trunc, info = self.env.step(action)
+        self.q.append(obs)
+        return self._out(), r, term, trunc, info
 
 def make_env(cfg):
     inner = MultiPlaneEnv({**ENV_KWARGS, "planes": cfg["planes"]})
+    if cfg.get("perturb"):
+        inner = RandomPerturb(inner, **cfg["perturb"])
     return HistoryWrapper(inner, cfg["history"])
 
 
@@ -70,14 +105,18 @@ def train(name, args):
     hist = HISTORY[name]
     config = (
         PPOConfig()
-        .environment("magnus_multi", env_config={"planes": TRAIN_PLANES, "history": hist})
+        .environment("magnus_multi", env_config={
+            "planes": TRAIN_PLANES,
+            "history": hist,
+            "perturb": {"max_latency": 2, "max_noise": 1.0} if args.perturb else None,
+        })
         .env_runners(num_env_runners=args.workers)
         .training(train_batch_size=args.batch, lr=3e-4)
         .rl_module(model_config={"fcnet_hiddens": [256, 256]})
         .debugging(seed=args.seed)
     )
     algo = config.build()
-    ckpt_dir = os.path.abspath(f"checkpoints_memexp/{name}")
+    ckpt_dir = os.path.abspath(f"checkpoints_memexp/{os.name}{args.tag}")
     os.makedirs(ckpt_dir, exist_ok=True)
     for i in range(1, args.iterations + 1):
         res = algo.train()
@@ -116,13 +155,15 @@ def evaluate(algo, name, planes, args):
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--run", choices=["control", "memory", "both"], default="both")
+    p.add_argument("--run", choices=["control", "memory", "memory8", "both"], default="both")
     p.add_argument("--iterations", type=int, default=1200)
     p.add_argument("--workers", type=int, default=8)
     p.add_argument("--batch", type=int, default=8000)
     p.add_argument("--episodes", type=int, default=100)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--eval-seed", type=int, default=1000)
+    p.add_argument("--perturb", action="store_true")
+    p.add_argument("--tag", default="")
     args = p.parse_args()
 
     ray.init(ignore_reinit_error=True)
