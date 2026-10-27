@@ -302,7 +302,18 @@ class JSBSimEnv(gym.Env):
         self._steps += 1
         obs = self._get_obs()
 
+        # Catch a diverged sim: NaN, infinite, or absurdly large state values
+        f = self.fdm
+        raw = np.array([f["velocities/p-rad_sec"], f["velocities/q-rad_sec"],
+                        f["velocities/r-rad_sec"], f["aero/alpha-deg"],
+                        f["aero/beta-deg"], f["velocities/vc-kts"]], dtype=np.float64)
+        blew_up = (not np.all(np.isfinite(raw))) or np.abs(raw).max() > 1e3
+        if blew_up:
+            obs = np.clip(np.nan_to_num(obs, nan=0.0, posinf=0.0, neginf=0.0), -1e3, 1e3).astype(np.float32)
+
         terminated, termination_reason = self._check_termination(obs)
+        if blew_up:
+            terminated, termination_reason = True, "sim_blowup"
         truncated = self._steps >= self._max_steps
         reward, reward_components = self._compute_reward(obs, termination_reason)
 
@@ -413,7 +424,7 @@ class JSBSimEnv(gym.Env):
         terminal_bonus = 0.0
         if termination_reason == "recovered":
             terminal_bonus = 200.0
-        elif termination_reason in ("crashed", "unrecoverable_attitude"):
+        elif termination_reason in ("crashed", "unrecoverable_attitude", "sim_blowup"):
             terminal_bonus = -200.0
 
         components = {

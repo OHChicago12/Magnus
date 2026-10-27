@@ -1,0 +1,76 @@
+2026-10-15 17:28:00,429	WARNING rl_module.py:463 -- DeprecationWarning: `RLModule(config=[RLModuleConfig object])` has been deprecated. Use `RLModule(observation_space=.., action_space=.., inference_only=.., model_config=.., catalog_class=..)` instead. This will raise an error in the future!
+
+
+     JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40
+            [JSBSim-ML v2.0]
+
+JSBSim startup beginning ...
+
+channel spread: [ 0.6356  0.1794  2.6394  2.0373  1.162   0.9199  6.2644 16.4452  7.3381]
+plane      condition   control  memory8   (recovered / 50)
+J3Cub      clean            50       50
+J3Cub      latency1         50       50
+J3Cub      latency2         50       50
+J3Cub      latency3         50       50
+J3Cub      latency4         50       42
+J3Cub      latency5         50       36
+J3Cub      latency6         49       39
+J3Cub      latency8         45       33
+J3Cub      noise0.3         50       50
+J3Cub      noise0.6         50       50
+J3Cub      noise1.0         50       50
+J3Cub      noise2.0         46       50
+J3Cub      noise4.0         28       49
+J3Cub      spikes5%         50       50
+J3Cub      spikes10%        50       50
+J3Cub      spikes20%        50       50
+c310       clean            50       50
+c310       latency1         50       50
+c310       latency2         50       50
+c310       latency3         50       50
+c310       latency4         50       50
+c310       latency5         50       50
+c310       latency6         50       50
+c310       latency8         50       50
+c310       noise0.3         50       50
+c310       noise0.6         50       50
+c310       noise1.0         50       50
+c310       noise2.0         50       50
+c310       noise4.0         50       50
+c310       spikes5%         50       50
+c310       spikes10%        50       50
+c310       spikes20%        50       50
+t6texan2   clean            50       49
+t6texan2   latency1         50       49
+t6texan2   latency2         48       49
+t6texan2   latency3         38       48
+t6texan2   latency4         12       36
+t6texan2   latency5          1       24
+t6texan2   latency6          0       13
+t6texan2   latency8          0        2
+t6texan2   noise0.3         50       49
+t6texan2   noise0.6         50       50
+t6texan2   noise1.0         50       50
+t6texan2   noise2.0         48       47
+t6texan2   noise4.0         30       10
+t6texan2   spikes5%         50       49
+t6texan2   spikes10%        50       49
+t6texan2   spikes20%        50       50
+
+Totals across all unseen planes, per condition
+clean      control  150  memory8  149  (of 150)
+latency1   control  150  memory8  149  (of 150)
+latency2   control  148  memory8  149  (of 150)
+latency3   control  138  memory8  148  (of 150)
+latency4   control  112  memory8  128  (of 150)
+latency5   control  101  memory8  110  (of 150)
+latency6   control   99  memory8  102  (of 150)
+latency8   control   95  memory8   85  (of 150)
+noise0.3   control  150  memory8  149  (of 150)
+noise0.6   control  150  memory8  150  (of 150)
+noise1.0   control  150  memory8  150  (of 150)
+noise2.0   control  144  memory8  147  (of 150)
+noise4.0   control  108  memory8  109  (of 150)
+spikes5%   control  150  memory8  149  (of 150)
+spikes10%  control  150  memory8  149  (of 150)
+spikes20%  control  150  memory8  150  (of 150)

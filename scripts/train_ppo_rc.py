@@ -6,6 +6,10 @@ Fresh run:   python scripts/train_ppo_rc.py --checkpoint-dir checkpoints_v3
 Resume:      python scripts/train_ppo_rc.py --resume checkpoints_v3/iter_500 --checkpoint-dir checkpoints_v3
 Switch parts off to isolate a problem: --no-airframe-dr, --no-servo, --vc-drop-prob 0 --vc-bias-kts 0 (and
 --vc-gain-range 1 1), --smooth-coef 0
+
+v4 options (all default off): --max-latency-steps N (random action delay of 0..N
+steps per episode), --mask-abv-prob P (alpha, beta and airspeed read 0 in a
+fraction P of episodes), --mask-psi-prob P (heading reads 0 in a fraction P).
 """
 import argparse
 import os
@@ -42,6 +46,9 @@ def build_env_config(args):
         vc_gain_range=tuple(args.vc_gain_range),
         vc_bias_kts=args.vc_bias_kts,
         smooth_coef=args.smooth_coef,
+        max_latency_steps=args.max_latency_steps,
+        mask_abv_prob=args.mask_abv_prob,
+        mask_psi_prob=args.mask_psi_prob,
     )
     if not args.no_airframe_dr:
         cfg["airframe_dr"] = True
@@ -65,6 +72,12 @@ def main():
     p.add_argument("--vc-gain-range", type=float, nargs=2, default=[0.6, 1.4])
     p.add_argument("--vc-bias-kts", type=float, default=3.0)
     p.add_argument("--smooth-coef", type=float, default=0.1)
+    p.add_argument("--max-latency-steps", type=int, default=0,
+                   help="Random action delay of 0..N agent steps per episode (0 = off)")
+    p.add_argument("--mask-abv-prob", type=float, default=0.0,
+                   help="Fraction of episodes where alpha, beta and airspeed read 0")
+    p.add_argument("--mask-psi-prob", type=float, default=0.0,
+                   help="Fraction of episodes where heading (psi) reads 0")
     args = p.parse_args()
 
     checkpoint_dir = os.path.abspath(args.checkpoint_dir)

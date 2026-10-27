@@ -1,0 +1,194 @@
+{
+  "J3Cub/clean": {
+    "control": 49,
+    "memory8": 50
+  },
+  "J3Cub/latency1": {
+    "control": 48,
+    "memory8": 50
+  },
+  "J3Cub/latency2": {
+    "control": 48,
+    "memory8": 50
+  },
+  "J3Cub/latency3": {
+    "control": 50,
+    "memory8": 50
+  },
+  "J3Cub/latency4": {
+    "control": 50,
+    "memory8": 50
+  },
+  "J3Cub/latency5": {
+    "control": 50,
+    "memory8": 45
+  },
+  "J3Cub/latency6": {
+    "control": 48,
+    "memory8": 41
+  },
+  "J3Cub/latency8": {
+    "control": 47,
+    "memory8": 30
+  },
+  "J3Cub/noise0.3": {
+    "control": 49,
+    "memory8": 50
+  },
+  "J3Cub/noise0.6": {
+    "control": 50,
+    "memory8": 50
+  },
+  "J3Cub/noise1.0": {
+    "control": 49,
+    "memory8": 50
+  },
+  "J3Cub/noise2.0": {
+    "control": 47,
+    "memory8": 50
+  },
+  "J3Cub/noise4.0": {
+    "control": 36,
+    "memory8": 48
+  },
+  "J3Cub/spikes5%": {
+    "control": 49,
+    "memory8": 50
+  },
+  "J3Cub/spikes10%": {
+    "control": 49,
+    "memory8": 50
+  },
+  "J3Cub/spikes20%": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/clean": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency1": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency2": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency3": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency4": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency5": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency6": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency8": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/noise0.3": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/noise0.6": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/noise1.0": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/noise2.0": {
+    "control": 49,
+    "memory8": 50
+  },
+  "c310/noise4.0": {
+    "control": 48,
+    "memory8": 50
+  },
+  "c310/spikes5%": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/spikes10%": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/spikes20%": {
+    "control": 50,
+    "memory8": 50
+  },
+  "t6texan2/clean": {
+    "control": 27,
+    "memory8": 50
+  },
+  "t6texan2/latency1": {
+    "control": 27,
+    "memory8": 50
+  },
+  "t6texan2/latency2": {
+    "control": 31,
+    "memory8": 49
+  },
+  "t6texan2/latency3": {
+    "control": 28,
+    "memory8": 49
+  },
+  "t6texan2/latency4": {
+    "control": 21,
+    "memory8": 46
+  },
+  "t6texan2/latency5": {
+    "control": 14,
+    "memory8": 39
+  },
+  "t6texan2/latency6": {
+    "control": 9,
+    "memory8": 24
+  },
+  "t6texan2/latency8": {
+    "control": 1,
+    "memory8": 9
+  },
+  "t6texan2/noise0.3": {
+    "control": 31,
+    "memory8": 50
+  },
+  "t6texan2/noise0.6": {
+    "control": 37,
+    "memory8": 50
+  },
+  "t6texan2/noise1.0": {
+    "control": 35,
+    "memory8": 50
+  },
+  "t6texan2/noise2.0": {
+    "control": 18,
+    "memory8": 50
+  },
+  "t6texan2/noise4.0": {
+    "control": 7,
+    "memory8": 22
+  },
+  "t6texan2/spikes5%": {
+    "control": 24,
+    "memory8": 50
+  },
+  "t6texan2/spikes10%": {
+    "control": 25,
+    "memory8": 50
+  },
+  "t6texan2/spikes20%": {
+    "control": 33,
+    "memory8": 50
+  }
+}

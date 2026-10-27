@@ -99,7 +99,8 @@ def get_action(module, obs, deterministic=True):
 
 
 def rollout_episode(module, env, deterministic=True, max_steps=2000,
-                    obs_noise=0.0, latency_steps=0, rng=None, obs_gain=None):
+                    obs_noise=0.0, latency_steps=0, rng=None, obs_gain=None,
+                    obs_latency_steps=0, obs_bias_deg=0.0, obs_bias_rate=0.0):
     """Run one episode, returning a dict of per-step traces plus outcome info.
 
     Reads pitch/roll/airspeed/aoa from `obs` (per JSBSimEnv's fixed layout),
@@ -118,12 +119,31 @@ def rollout_episode(module, env, deterministic=True, max_steps=2000,
     unrecoverable_axis = None
 
     noise_std = OBS_NOISE_STD * obs_noise
+    bias_rad = ((rng if rng is not None else np.random.default_rng()).uniform(-1, 1, 2)
+                * np.deg2rad(obs_bias_deg)) if obs_bias_deg > 0 else None
+    rate_sign = ((rng if rng is not None else np.random.default_rng()).choice([-1.0, 1.0], 2)
+                 if obs_bias_rate > 0 else None)
     action_queue = None
+    obs_queue = None
 
     for _ in range(max_steps):
         policy_obs = obs
+        if obs_latency_steps > 0:
+            if obs_queue is None:
+                obs_queue = deque([obs] * obs_latency_steps)
+            obs_queue.append(obs)
+            policy_obs = obs_queue.popleft()
         if obs_noise > 0:
-            policy_obs = (obs + rng.normal(0.0, noise_std)).astype(np.float32)
+            policy_obs = (policy_obs + rng.normal(0.0, noise_std)).astype(np.float32)
+        if bias_rad is not None:
+            policy_obs = policy_obs.copy()
+            policy_obs[0] += bias_rad[0]
+            policy_obs[1] += bias_rad[1]
+        if obs_bias_rate > 0:
+            omega = float(np.sqrt(policy_obs[3] ** 2 + policy_obs[4] ** 2 + policy_obs[5] ** 2))
+            policy_obs = policy_obs.copy()
+            policy_obs[0] += rate_sign[0] * obs_bias_rate * omega
+            policy_obs[1] += rate_sign[1] * obs_bias_rate * omega
         if obs_gain is not None:
             policy_obs = (policy_obs * obs_gain).astype(np.float32)
         action = get_action(module, policy_obs, deterministic=deterministic)
@@ -263,7 +283,8 @@ def _print_unrecoverable_axis_breakdown(episodes):
 def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0, departed_start_prob=0.5,
                           aircraft="c172p", departed_alpha_range_deg=(16, 25),
                           departed_bank_range_deg=(0, 30), obs_noise=0.0, latency_steps=0,
-                          env_kwargs=None, obs_gain=None):
+                          obs_latency_steps=0,
+                          env_kwargs=None, obs_gain=None, obs_bias_deg=0.0, obs_bias_rate=0.0):
     """Run n_episodes for each checkpoint. Returns {checkpoint_path: {...}}.
 
     departed_start_prob must match (or intentionally differ from) what the
@@ -297,7 +318,10 @@ def evaluate_checkpoints(checkpoint_paths, n_episodes=10, seed=0, departed_start
             env.reset(seed=seed + ep)
             episodes.append(rollout_episode(module, env, obs_noise=obs_noise,
                                             latency_steps=latency_steps, rng=rng,
-                                            obs_gain=obs_gain))
+                                            obs_latency_steps=obs_latency_steps,
+                                            obs_gain=obs_gain,
+                                            obs_bias_deg=obs_bias_deg,
+                                            obs_bias_rate=obs_bias_rate))
 
         outcome_counts = defaultdict(int)
         started_departed_count = 0
@@ -518,10 +542,16 @@ def main():
                               "departed spawns.")
     parser.add_argument("--obs-noise", type=float, default=0.0,
                          help="Sensor noise multiplier on policy inputs (0=none, 1=nominal, 3=harsh)")
+    parser.add_argument("--obs-latency-steps", type=int, default=0,
+                         help="Delay the policy's observations by this many agent steps")
     parser.add_argument("--latency-steps", type=int, default=0,
                          help="Delay actions by this many agent steps (1 step = 50 ms at 20 Hz)")
     parser.add_argument("--env-kwargs", default="{}",
                          help="Extra JSBSimEnv settings as JSON, e.g. '{\"agent_hz\": 60}'")
+    parser.add_argument("--obs-bias-rate", type=float, default=0.0,
+                        help="Extra roll/pitch error (rad) per rad/s of total rotation rate, random sign per episode")
+    parser.add_argument("--obs-bias-deg", type=float, default=0.0,
+                        help="Constant random roll/pitch error (+/-N deg) on policy inputs, fixed per episode")
     parser.add_argument("--obs-gain", default="",
                          help="9 comma-separated multipliers on the policy's inputs "
                               "[phi,theta,psi,p,q,r,alpha,beta,vc]")
@@ -557,8 +587,11 @@ def main():
         departed_bank_range_deg=(0, args.departed_bank_max),
         obs_noise=args.obs_noise,
         latency_steps=args.latency_steps,
+        obs_latency_steps=args.obs_latency_steps,
         env_kwargs=env_kwargs,
         obs_gain=obs_gain,
+        obs_bias_deg=args.obs_bias_deg,
+        obs_bias_rate=args.obs_bias_rate,
     )
     plot_comparison(results, out_dir=args.out)
     if args.bank_sign_analysis:

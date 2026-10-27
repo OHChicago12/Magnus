@@ -1,0 +1,23 @@
+2026-10-05 19:12:33,851	WARNING algorithm_config.py:5160 -- You are running PPO on the new API stack! This is the new default behavior for this algorithm. If you don't want to use the new API stack, set `config.api_stack(enable_rl_module_and_learner=False,enable_env_runner_and_connector_v2=False)`. For a detailed migration guide, see here: https://docs.ray.io/en/master/rllib/new-api-stack-migration-guide.html
+[2026-10-05 19:12:33,890 E 46967 1876343] core_worker.cc:2330: Actor with class name: 'SingleAgentEnvRunner' and ID: '739b00ae70c86cb841d511f601000000' has constructor arguments in the object store and max_restarts > 0. If the arguments in the object store go out of scope or are lost, the actor restart will fail. See https://github.com/ray-project/ray/issues/53727 for more details.
+Evaluating checkpoint: checkpoints_v3b/iter_1200
+
+
+     JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40
+            [JSBSim-ML v2.0]
+
+JSBSim startup beginning ...
+
+  outcomes: {'truncated': 79, 'recovered': 4, 'crashed': 17}
+  started already departed: 100/100
+  ever departed (started or during episode): 100/100
+  started departed (n=100): {'truncated': 79, 'recovered': 4, 'crashed': 17}
+  normal start (n=0): {}
+  departed-start recovery time: min 69, median 75, mean 76, max 85 (n=4)
+  recovery quality (n=4): altitude lost median 12 ft, max 17; min pitch median -29, worst -46 deg; peak airspeed median 20, max 20 kts
+  departed spawn pitch@step0: median 25, max 47 deg
+  --- spawn-parameter correlation (departed-start episodes only) ---
+    bank sign: positive 2/53 recovered, negative 2/47 recovered
+    yaw rate sign: positive 4/50 recovered, negative 0/50 recovered
+    yaw rate magnitude: low (<= 2.30 rad/s) 1/51 recovered, high 3/49 recovered
+Saved 2 figures to plots/runs/sweep_v3b_1200_20/

@@ -1,0 +1,68 @@
+{
+  "memory8": {
+    "train_planes": {
+      "c172p_rc": {
+        "recovered": 64,
+        "n": 100,
+        "outcomes": {
+          "recovered": 64,
+          "truncated": 34,
+          "unrecoverable_attitude": 2
+        }
+      },
+      "c182": {
+        "recovered": 98,
+        "n": 100,
+        "outcomes": {
+          "recovered": 98,
+          "truncated": 2
+        }
+      },
+      "pa28": {
+        "recovered": 99,
+        "n": 100,
+        "outcomes": {
+          "recovered": 99,
+          "truncated": 1
+        }
+      },
+      "pc7": {
+        "recovered": 17,
+        "n": 100,
+        "outcomes": {
+          "unrecoverable_attitude": 77,
+          "recovered": 17,
+          "sim_blowup": 5,
+          "truncated": 1
+        }
+      }
+    },
+    "test_planes": {
+      "J3Cub": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c310": {
+        "recovered": 95,
+        "n": 100,
+        "outcomes": {
+          "recovered": 95,
+          "truncated": 5
+        }
+      },
+      "t6texan2": {
+        "recovered": 27,
+        "n": 100,
+        "outcomes": {
+          "crashed": 13,
+          "unrecoverable_attitude": 46,
+          "recovered": 27,
+          "truncated": 14
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,135 @@
+2026-10-19 09:16:02,625	INFO worker.py:2024 -- Started a local Ray instance.
+2026-10-19 09:16:03,376	WARNING train_memory_experiment.py:118 -- DeprecationWarning: `build` has been deprecated. Use `AlgorithmConfig.build_algo` instead. This will raise an error in the future!
+2026-10-19 09:16:03,376	WARNING algorithm_config.py:5160 -- You are running PPO on the new API stack! This is the new default behavior for this algorithm. If you don't want to use the new API stack, set `config.api_stack(enable_rl_module_and_learner=False,enable_env_runner_and_connector_v2=False)`. For a detailed migration guide, see here: https://docs.ray.io/en/master/rllib/new-api-stack-migration-guide.html
+[2026-10-19 09:16:03,899 E 2056 9802576] core_worker.cc:2330: Actor with class name: 'SingleAgentEnvRunner' and ID: 'a2715119410db6a25981ed6701000000' has constructor arguments in the object store and max_restarts > 0. If the arguments in the object store go out of scope or are lost, the actor restart will fail. See https://github.com/ray-project/ray/issues/53727 for more details.
+[36m(SingleAgentEnvRunner pid=2107)[0m DeprecationWarning: `RLModule(config=[RLModuleConfig object])` has been deprecated. Use `RLModule(observation_space=.., action_space=.., inference_only=.., model_config=.., catalog_class=..)` instead. This will raise an error in the future!
+2026-10-19 09:16:06,810	WARNING rl_module.py:463 -- DeprecationWarning: `RLModule(config=[RLModuleConfig object])` has been deprecated. Use `RLModule(observation_space=.., action_space=.., inference_only=.., model_config=.., catalog_class=..)` instead. This will raise an error in the future!
+2026-10-19 09:16:06,839	WARNING util.py:62 -- Install gputil for GPU system monitoring.
+[36m(SingleAgentEnvRunner pid=2107)[0m /Users/olive/Magnus/venv/lib/python3.14/site-packages/gymnasium/utils/passive_env_checker.py:167: DeprecationWarning: [33mWARN: Current gymnasium version requires that `Env.reset` can be passed a `seed` instead of using `Env.seed` for resetting the environment random number generator.[0m
+[36m(SingleAgentEnvRunner pid=2107)[0m   logger.deprecation(
+[36m(SingleAgentEnvRunner pid=2107)[0m /Users/olive/Magnus/venv/lib/python3.14/site-packages/gymnasium/utils/passive_env_checker.py:180: DeprecationWarning: [33mWARN: Current gymnasium version requires that `Env.reset` can be passed `options` to allow the environment initialisation to be passed additional information.[0m
+[36m(SingleAgentEnvRunner pid=2107)[0m   logger.deprecation(
+[36m(SingleAgentEnvRunner pid=2104)[0m 
+[36m(SingleAgentEnvRunner pid=2104)[0m 
+[36m(SingleAgentEnvRunner pid=2104)[0m      JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40
+[36m(SingleAgentEnvRunner pid=2104)[0m             [JSBSim-ML v2.0]
+[36m(SingleAgentEnvRunner pid=2104)[0m 
+[36m(SingleAgentEnvRunner pid=2104)[0m JSBSim startup beginning ...
+[36m(SingleAgentEnvRunner pid=2104)[0m 
+[36m(SingleAgentEnvRunner pid=2099)[0m 
+[36m(SingleAgentEnvRunner pid=2099)[0m 
+[36m(SingleAgentEnvRunner pid=2099)[0m 
+[36m(SingleAgentEnvRunner pid=2099)[0m 
+[36m(SingleAgentEnvRunner pid=2107)[0m 
+[36m(SingleAgentEnvRunner pid=2107)[0m 
+[36m(SingleAgentEnvRunner pid=2107)[0m 
+[36m(SingleAgentEnvRunner pid=2107)[0m 
+[36m(SingleAgentEnvRunner pid=2100)[0m 
+[36m(SingleAgentEnvRunner pid=2100)[0m 
+[36m(SingleAgentEnvRunner pid=2100)[0m 
+[36m(SingleAgentEnvRunner pid=2100)[0m 
+[36m(SingleAgentEnvRunner pid=2101)[0m 
+[36m(SingleAgentEnvRunner pid=2101)[0m 
+[36m(SingleAgentEnvRunner pid=2101)[0m 
+[36m(SingleAgentEnvRunner pid=2101)[0m 
+[36m(SingleAgentEnvRunner pid=2103)[0m 
+[36m(SingleAgentEnvRunner pid=2103)[0m 
+[36m(SingleAgentEnvRunner pid=2103)[0m 
+[36m(SingleAgentEnvRunner pid=2103)[0m 
+[36m(SingleAgentEnvRunner pid=2102)[0m 
+[36m(SingleAgentEnvRunner pid=2102)[0m 
+[36m(SingleAgentEnvRunner pid=2102)[0m 
+[36m(SingleAgentEnvRunner pid=2102)[0m 
+[36m(SingleAgentEnvRunner pid=2106)[0m 
+[36m(SingleAgentEnvRunner pid=2106)[0m 
+[36m(SingleAgentEnvRunner pid=2106)[0m 
+[36m(SingleAgentEnvRunner pid=2106)[0m 
+[control] iter 20 return -1158.6988360861935
+[control] iter 40 return -416.92676712572575
+[control] iter 60 return -597.058367890698
+[control] iter 80 return -373.59982345138116
+[control] iter 100 return 51.10325210603575
+[control] iter 120 return -69.84401334951217
+[control] iter 140 return -234.62239452690542
+[control] iter 160 return 11.281596072869148
+[control] iter 180 return -62.02308861584618
+[control] iter 200 return 57.79811231474846
+[control] iter 220 return -553.9889155271727
+[control] iter 240 return -230.78904090871683
+[control] iter 260 return -6.163037801858707
+[control] iter 280 return 3.7082381323871556
+[control] iter 300 return 72.60411442956354
+[control] iter 320 return -337.26510564104103
+[control] iter 340 return -19.607003586141616
+[control] iter 360 return 66.34533500116096
+[control] iter 380 return 72.0089455797122
+[control] iter 400 return 95.8424286860686
+[control] iter 420 return 114.44439686628489
+[control] iter 440 return 95.06688218326359
+[control] iter 460 return -194.1683109388777
+[control] iter 480 return 15.057943724887272
+[control] iter 500 return 96.3627746915206
+[control] iter 520 return 106.92665155641325
+[control] iter 540 return -99.25110558847076
+[control] iter 560 return -474.8504199947726
+[control] iter 580 return 49.85279763665869
+[control] iter 600 return -35.164007787608405
+[control] iter 620 return -84.61263864888595
+[control] iter 640 return 92.76449946268247
+[control] iter 660 return 90.60315386492472
+[control] iter 680 return -164.54077813777076
+[control] iter 700 return 62.13136836962822
+[control] iter 720 return 63.49014391010497
+[control] iter 740 return -1.8012294027308922
+[control] iter 760 return 81.54186516375769
+[control] iter 780 return -512.2887887443233
+[control] iter 800 return 79.38256199543292
+[control] iter 820 return -228.31540925329568
+[control] iter 840 return 103.05500405262678
+[control] iter 860 return -152.87056032510904
+[control] iter 880 return -170.3293669341076
+[control] iter 900 return -669.8686666468997
+[control] iter 920 return -114.10257027716865
+[control] iter 940 return 106.10535125956575
+[control] iter 960 return -1.099802832624988
+[control] iter 980 return -180.92918958070075
+[control] iter 1000 return 113.06193081202115
+[control] iter 1020 return 98.32837236451579
+[control] iter 1040 return -135.64980287582443
+[control] iter 1060 return -160.640428998022
+[control] iter 1080 return -292.78603395475795
+[control] iter 1100 return -14.994490240235889
+[control] iter 1120 return 101.13007942071329
+[control] iter 1140 return 89.24865691019939
+[control] iter 1160 return -441.41715697019566
+[control] iter 1180 return -10.413675300302089
+[control] iter 1200 return -88.7810863945292
+
+
+     JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40
+            [JSBSim-ML v2.0]
+
+JSBSim startup beginning ...
+
+[control] c172p_rc: 100/100 recovered  {'recovered': 100}
+[control] c182: 100/100 recovered  {'recovered': 100}
+[control] pa28: 100/100 recovered  {'recovered': 100}
+[control] J3Cub: 97/100 recovered  {'recovered': 97, 'unrecoverable_attitude': 3}
+[control] c310: 99/100 recovered  {'recovered': 99, 'truncated': 1}
+[control] t6texan2: 22/100 recovered  {'unrecoverable_attitude': 32, 'crashed': 37, 'recovered': 22, 'truncated': 9}
+
+Recovered / n (test planes = never seen in training)
+plane         control
+c172p_rc      100/100  (train)
+c182          100/100  (train)
+pa28          100/100  (train)
+J3Cub          97/100  (test)
+c310           99/100  (test)
+t6texan2       22/100  (test)
+[36m(SingleAgentEnvRunner pid=2106)[0m DeprecationWarning: `RLModule(config=[RLModuleConfig object])` has been deprecated. Use `RLModule(observation_space=.., action_space=.., inference_only=.., model_config=.., catalog_class=..)` instead. This will raise an error in the future![32m [repeated 7x across cluster][0m
+[36m(SingleAgentEnvRunner pid=2106)[0m /Users/olive/Magnus/venv/lib/python3.14/site-packages/gymnasium/utils/passive_env_checker.py:167: DeprecationWarning: [33mWARN: Current gymnasium version requires that `Env.reset` can be passed a `seed` instead of using `Env.seed` for resetting the environment random number generator.[0m[32m [repeated 7x across cluster][0m
+[36m(SingleAgentEnvRunner pid=2106)[0m   logger.deprecation([32m [repeated 14x across cluster][0m
+[36m(SingleAgentEnvRunner pid=2106)[0m /Users/olive/Magnus/venv/lib/python3.14/site-packages/gymnasium/utils/passive_env_checker.py:180: DeprecationWarning: [33mWARN: Current gymnasium version requires that `Env.reset` can be passed `options` to allow the environment initialisation to be passed additional information.[0m[32m [repeated 7x across cluster][0m
+[36m(SingleAgentEnvRunner pid=2106)[0m      JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40[32m [repeated 7x across cluster] (Ray deduplicates logs by default. Set RAY_DEDUP_LOGS=0 to disable log deduplication, or see https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#log-deduplication for more options.)[0m
+[36m(SingleAgentEnvRunner pid=2106)[0m             [JSBSim-ML v2.0][32m [repeated 7x across cluster][0m
+[36m(SingleAgentEnvRunner pid=2106)[0m JSBSim startup beginning ...[32m [repeated 7x across cluster][0m

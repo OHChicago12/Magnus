@@ -1,0 +1,40 @@
+2026-10-15 14:29:46,202	WARNING rl_module.py:463 -- DeprecationWarning: `RLModule(config=[RLModuleConfig object])` has been deprecated. Use `RLModule(observation_space=.., action_space=.., inference_only=.., model_config=.., catalog_class=..)` instead. This will raise an error in the future!
+
+
+     JSBSim Flight Dynamics Model v1.3.1 [GitHub build 1837/commit 3b25f25e49b42d0489c04ac805674fc1450ca579] May 17 2026 14:39:40
+            [JSBSim-ML v2.0]
+
+JSBSim startup beginning ...
+
+channel spread: [ 0.6356  0.1794  2.6394  2.0373  1.162   0.9199  6.2644 16.4452  7.3381]
+plane      condition   control  memory8   (recovered / 50)
+J3Cub      clean            50       50
+J3Cub      latency3         50       50
+J3Cub      latency6         49       39
+J3Cub      latency12        30       10
+J3Cub      noise0.1         50       50
+J3Cub      noise0.3         50       50
+J3Cub      spikes2%         50       50
+c310       clean            50       50
+c310       latency3         50       50
+c310       latency6         50       50
+c310       latency12        50       50
+c310       noise0.1         50       50
+c310       noise0.3         50       50
+c310       spikes2%         50       50
+t6texan2   clean            50       49
+t6texan2   latency3         38       48
+t6texan2   latency6          0       13
+t6texan2   latency12         0        0
+t6texan2   noise0.1         50       49
+t6texan2   noise0.3         50       49
+t6texan2   spikes2%         50       49
+
+Totals across all unseen planes, per condition
+clean      control  150  memory8  149  (of 150)
+latency3   control  138  memory8  148  (of 150)
+latency6   control   99  memory8  102  (of 150)
+latency12  control   80  memory8   60  (of 150)
+noise0.1   control  150  memory8  149  (of 150)
+noise0.3   control  150  memory8  149  (of 150)
+spikes2%   control  150  memory8  149  (of 150)

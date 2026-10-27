@@ -21,7 +21,7 @@ from ray.tune.registry import register_env
 sys.path.insert(0, os.getcwd())
 from envs.multi_plane_env import MultiPlaneEnv
 
-TRAIN_PLANES = ["c172p_rc", "c182", "pa28"]
+TRAIN_PLANES = ["c172p_rc", "c182", "pa28", "pc7"]
 TEST_PLANES = ["J3Cub", "c310", "t6texan2"]
 HISTORY = {"control": 1, "memory": 32, "memory8": 8}
 
@@ -116,7 +116,7 @@ def train(name, args):
         .debugging(seed=args.seed)
     )
     algo = config.build()
-    ckpt_dir = os.path.abspath(f"checkpoints_memexp/{os.name}{args.tag}")
+    ckpt_dir = os.path.abspath(f"checkpoints_memexp/{name}{args.tag}")
     os.makedirs(ckpt_dir, exist_ok=True)
     for i in range(1, args.iterations + 1):
         res = algo.train()
@@ -133,7 +133,8 @@ def evaluate(algo, name, planes, args):
     hist = HISTORY[name]
     out = {}
     for plane in planes:
-        env = make_env({"planes": [plane], "history": hist})
+        env = make_env({"planes": [plane], "history": hist,
+                "perturb": {"max_latency": 2, "max_noise": 1.0} if args.perturb else None})
         low, high = env.action_space.low, env.action_space.high
         ad = env.ad
         counts = collections.Counter()
@@ -167,7 +168,7 @@ def main():
     args = p.parse_args()
 
     ray.init(ignore_reinit_error=True)
-    runs = ["control", "memory"] if args.run == "both" else [args.run]
+    runs = ["control", "memory", "memory8"] if args.run == "both" else [args.run]
     results = {}
     for name in runs:
         algo = train(name, args)

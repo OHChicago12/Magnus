@@ -1,0 +1,86 @@
+{
+  "J3Cub/clean": {
+    "control": 50,
+    "memory8": 50
+  },
+  "J3Cub/latency3": {
+    "control": 50,
+    "memory8": 50
+  },
+  "J3Cub/latency6": {
+    "control": 49,
+    "memory8": 39
+  },
+  "J3Cub/latency12": {
+    "control": 30,
+    "memory8": 10
+  },
+  "J3Cub/noise0.1": {
+    "control": 50,
+    "memory8": 50
+  },
+  "J3Cub/noise0.3": {
+    "control": 50,
+    "memory8": 50
+  },
+  "J3Cub/spikes2%": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/clean": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency3": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency6": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/latency12": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/noise0.1": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/noise0.3": {
+    "control": 50,
+    "memory8": 50
+  },
+  "c310/spikes2%": {
+    "control": 50,
+    "memory8": 50
+  },
+  "t6texan2/clean": {
+    "control": 50,
+    "memory8": 49
+  },
+  "t6texan2/latency3": {
+    "control": 38,
+    "memory8": 48
+  },
+  "t6texan2/latency6": {
+    "control": 0,
+    "memory8": 13
+  },
+  "t6texan2/latency12": {
+    "control": 0,
+    "memory8": 0
+  },
+  "t6texan2/noise0.1": {
+    "control": 50,
+    "memory8": 49
+  },
+  "t6texan2/noise0.3": {
+    "control": 50,
+    "memory8": 49
+  },
+  "t6texan2/spikes2%": {
+    "control": 50,
+    "memory8": 49
+  }
+}

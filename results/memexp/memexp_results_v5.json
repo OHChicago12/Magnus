@@ -1,0 +1,179 @@
+{
+  "control": {
+    "train_planes": {
+      "c172p_rc": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c182": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "pa28": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "pc7": {
+        "recovered": 96,
+        "n": 100,
+        "outcomes": {
+          "recovered": 96,
+          "unrecoverable_attitude": 4
+        }
+      }
+    },
+    "test_planes": {
+      "J3Cub": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c310": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "t6texan2": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      }
+    }
+  },
+  "memory": {
+    "train_planes": {
+      "c172p_rc": {
+        "recovered": 60,
+        "n": 100,
+        "outcomes": {
+          "truncated": 39,
+          "recovered": 60,
+          "unrecoverable_attitude": 1
+        }
+      },
+      "c182": {
+        "recovered": 90,
+        "n": 100,
+        "outcomes": {
+          "recovered": 90,
+          "truncated": 10
+        }
+      },
+      "pa28": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "pc7": {
+        "recovered": 23,
+        "n": 100,
+        "outcomes": {
+          "unrecoverable_attitude": 77,
+          "recovered": 23
+        }
+      }
+    },
+    "test_planes": {
+      "J3Cub": {
+        "recovered": 85,
+        "n": 100,
+        "outcomes": {
+          "recovered": 85,
+          "truncated": 15
+        }
+      },
+      "c310": {
+        "recovered": 75,
+        "n": 100,
+        "outcomes": {
+          "recovered": 75,
+          "truncated": 25
+        }
+      },
+      "t6texan2": {
+        "recovered": 8,
+        "n": 100,
+        "outcomes": {
+          "unrecoverable_attitude": 86,
+          "recovered": 8,
+          "truncated": 1,
+          "crashed": 5
+        }
+      }
+    }
+  },
+  "memory8": {
+    "train_planes": {
+      "c172p_rc": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c182": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "pa28": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "pc7": {
+        "recovered": 75,
+        "n": 100,
+        "outcomes": {
+          "unrecoverable_attitude": 24,
+          "recovered": 75,
+          "sim_blowup": 1
+        }
+      }
+    },
+    "test_planes": {
+      "J3Cub": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "c310": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      },
+      "t6texan2": {
+        "recovered": 100,
+        "n": 100,
+        "outcomes": {
+          "recovered": 100
+        }
+      }
+    }
+  }
+}
